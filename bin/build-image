@@ -27,6 +27,7 @@ cache=${OMARCHY_PI_CACHE:-$HOME/.cache/omarchy-pi}
 tarball_name=ArchLinuxARM-rpi-aarch64-latest.tar.gz
 tarball_url=http://os.archlinuxarm.org/os/$tarball_name
 alarm_key=68B3537F39A313B3E574D06777193F152BDBE6A6
+node_dist=https://nodejs.org/dist/latest
 
 mkdir -p "$cache"
 tarball=$cache/$tarball_name
@@ -73,6 +74,17 @@ gpg --batch --status-fd 1 --verify "$tarball.sig" "$tarball" 2>/dev/null | grep 
   echo "Error: $tarball is not signed by Arch Linux ARM ($alarm_key)" >&2
   exit 1
 }
+
+# Owner setup unpacks a bundled Node.js rather than fetching it, as on an ISO
+# install, so the first boot needs no network for it.
+log "Node.js"
+node_sum=$(curl -fsSL --retry 3 "$node_dist/SHASUMS256.txt" | grep -E '  node-v[0-9.]+-linux-arm64\.tar\.gz$')
+node_tarball=$cache/${node_sum##* }
+if [[ ! -f $node_tarball ]]; then
+  curl -fL --retry 3 -o "$node_tarball.part" "$node_dist/${node_sum##* }"
+  mv "$node_tarball.part" "$node_tarball"
+fi
+(cd "$cache" && sha256sum --quiet -c <<<"$node_sum")
 
 log "Omarchy packages"
 rm -rf "$pkgs"
@@ -125,6 +137,11 @@ echo "TIMING download $((SECONDS - start))s"
 for name in 20-install 25-boot 30-finalize; do
   stage "$name"
 done
+
+# Where install/user/mise-work.sh looks at first boot, and factory reset
+# carries it to the next owner from.
+sudo install -d -m 0755 "$mnt/var/lib/omarchy/provisioning/packages"
+sudo install -m 0644 "$node_tarball" "$mnt/var/lib/omarchy/provisioning/packages/"
 
 log "Factory snapshot"
 sudo "$here/disk" factory "$mnt"

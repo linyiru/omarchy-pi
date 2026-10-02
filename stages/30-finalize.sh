@@ -6,9 +6,6 @@
 # for by /var/lib/omarchy/image/pacman-keyring), the staged packages, and the
 # build's resolv.conf. The package cache was the build host's, never the
 # image's.
-#
-# No Node tarball is staged: install/user/mise-work.sh looks only for a
-# linux-x64 one, so first boot fetches Node from the network on a Pi.
 
 set -euo pipefail
 

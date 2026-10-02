@@ -31,7 +31,7 @@ QEMU's `virt` machine stands in for the Pi: its device tree is patched to claim 
 - **Disk:** an MBR with a 512 MiB FAT32 boot partition and a btrfs root holding `@`, `@home`, `@log` and `@pkg`, as an Omarchy ISO install lays them out, plus a read-only `@factory` snapshot for factory reset (`bin/disk`).
 - **Boot:** Arch Linux ARM's chain, unchanged: the firmware loads U-Boot (`kernel8.img`), and U-Boot's `boot.scr` loads the mainline `linux-aarch64` kernel, the board's DTB and the initramfs. Only the root flags change, to the `@` subvolume.
 - **System:** the Pi's default package set from `omarchy-pkg-defaults raspberrypi`, set up by `omarchy-apply-system --defer-provisioning --first-install` as the ISO does, with hardware setup deferred to the Pi's first boot (`/var/lib/omarchy/image/target` says `platform=raspberrypi`).
-- **First boot:** makes the machine's own pacman keyring, runs the deferred hardware setup, rebuilds the initramfs for the board, then asks for the owner on tty1. The image ships no account: Arch Linux ARM's `alarm` user is removed and root is locked until owner setup.
+- **First boot:** makes the machine's own pacman keyring, runs the deferred hardware setup, rebuilds the initramfs for the board, then asks for the owner on tty1. Owner setup unpacks the Node.js tarball the image carries, so none of it needs the network. The image ships no account: Arch Linux ARM's `alarm` user is removed and root is locked until owner setup.
 
 ## Layout
 
