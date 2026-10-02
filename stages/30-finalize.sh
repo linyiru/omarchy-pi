@@ -33,6 +33,15 @@ fi
 usermod -p '!*' root
 echo omarchy >/etc/hostname
 
+# It also runs systemd-networkd, with DHCP on every wired link (en.network,
+# eth.network, owned by no package). Omarchy's network setup retires networkd,
+# but only on the first boot, where it ran beside NetworkManager on the same
+# link, and only archinstall's network files. Omarchy uses NetworkManager.
+systemctl disable systemd-networkd.service systemd-networkd.socket \
+  systemd-networkd-varlink.socket systemd-networkd-varlink-metrics.socket \
+  systemd-networkd-resolve-hook.socket systemd-networkd-wait-online.service
+rm -f /etc/systemd/network/en.network /etc/systemd/network/eth.network
+
 rm -rf /etc/pacman.d/gnupg
 rm -rf /root/pkgs /root/rpi-pkgs.txt /root/probe.txt
 
