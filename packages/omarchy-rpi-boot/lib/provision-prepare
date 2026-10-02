@@ -1,0 +1,7 @@
+#!/bin/bash
+
+# Owner setup can finish here when the boot chain is one this package manages.
+source /usr/lib/omarchy/rpi-boot/common.sh
+
+refuse_encrypted
+verify_boot_chain

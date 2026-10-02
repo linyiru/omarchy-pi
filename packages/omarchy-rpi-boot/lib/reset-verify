@@ -1,0 +1,7 @@
+#!/bin/bash
+
+# Read-only: the boot files boot the factory root.
+source /usr/lib/omarchy/rpi-boot/common.sh
+
+(( $# == 1 )) || fail "usage: reset-verify <factory-root>"
+verify_boot_chain "$1"

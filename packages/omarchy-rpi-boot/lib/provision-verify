@@ -1,0 +1,7 @@
+#!/bin/bash
+
+# Read-only: the boot chain holds no staged key or unlock.
+source /usr/lib/omarchy/rpi-boot/common.sh
+
+refuse_encrypted
+! compgen -G "$boot_dir/*.key" >/dev/null || fail "a key file is staged in $boot_dir"

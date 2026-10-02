@@ -1,0 +1,6 @@
+#!/bin/bash
+
+# An unencrypted root has no staged unlock in its boot chain to drop.
+source /usr/lib/omarchy/rpi-boot/common.sh
+
+refuse_encrypted

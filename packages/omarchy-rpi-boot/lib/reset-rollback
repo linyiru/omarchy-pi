@@ -1,0 +1,4 @@
+#!/bin/bash
+
+# reset-prepare changes nothing, so there is nothing to restore.
+source /usr/lib/omarchy/rpi-boot/common.sh

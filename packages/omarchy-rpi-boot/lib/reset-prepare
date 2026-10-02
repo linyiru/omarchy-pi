@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# reset-prepare <factory-root> [<luks-device>]. The factory root becomes @, which
+# boot.txt already roots on, so the boot files stay; they must match the
+# factory root's kernel.
+source /usr/lib/omarchy/rpi-boot/common.sh
+
+(( $# >= 1 )) || fail "usage: reset-prepare <factory-root> [<luks-device>]"
+(( $# == 1 )) || fail "this omarchy-rpi-boot prototype does not reset encrypted roots"
+refuse_encrypted
+verify_boot_chain "$1"

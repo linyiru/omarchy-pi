@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# setup-boot [image-first-boot]. Points boot.txt at the @ subvolume, builds
+# boot.scr from it, and rebuilds the initramfs, or asks the image's first boot
+# to.
+source /usr/lib/omarchy/rpi-boot/common.sh
+
+boot_mounted || fail "$boot_dir is not mounted"
+point_boot_txt_at_root
+boot_scr_current || build_boot_scr
+
+if [[ ${1:-} == "image-first-boot" ]]; then
+  install -m 0644 /dev/null /var/lib/omarchy/image/boot-rebuild
+else
+  mkinitcpio -P
+fi

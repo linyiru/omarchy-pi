@@ -1,0 +1,8 @@
+#!/bin/bash
+
+# Takes the throwaway key on standard input. An unencrypted root unlocks
+# nothing, so it is read and dropped.
+source /usr/lib/omarchy/rpi-boot/common.sh
+
+cat >/dev/null
+refuse_encrypted

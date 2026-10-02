@@ -11,6 +11,12 @@ set -euo pipefail
 
 omarchy_key=40DFB630FF42BCFFB047046CF0134EE680CAC571
 
+# Every kernel, firmware or hook package would rebuild the initramfs, slowly
+# under emulation and before the boot stage has its configuration. As the ISO
+# does during install, mask the build until stages/25-boot.sh runs it once.
+install -d /etc/pacman.d/hooks
+ln -sfn /dev/null /etc/pacman.d/hooks/90-mkinitcpio-install.hook
+
 pacman-key --init
 pacman-key --populate archlinuxarm
 pacman-key --recv-keys "$omarchy_key" --keyserver hkps://keys.openpgp.org

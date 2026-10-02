@@ -1,0 +1,6 @@
+#!/bin/bash
+
+# Read-only: the updated boot chain boots this system.
+source /usr/lib/omarchy/rpi-boot/common.sh
+
+verify_boot_chain /
