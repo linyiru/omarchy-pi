@@ -1,0 +1,36 @@
+#!/bin/bash
+
+# Builds omarchy-dev and omarchy-settings-dev for aarch64 from a local Omarchy
+# checkout, with the PKGBUILDs from an omarchy-pkgs checkout. Their payload is architecture-independent, so this
+# runs on the host with CARCH=aarch64 and no emulation.
+#
+# Usage: bin/build-packages <omarchy-checkout> <omarchy-pkgs-checkout> <out-dir>
+
+set -euo pipefail
+
+if (( $# != 3 )); then
+  echo "Usage: $0 <omarchy-checkout> <omarchy-pkgs-checkout> <out-dir>" >&2
+  exit 2
+fi
+
+src=$(realpath -- "$1")
+pkgs=$(realpath -- "$2")
+out=$(realpath -m -- "$3")
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+
+mkdir -p "$out"
+sed -e 's/^CARCH=.*/CARCH="aarch64"/' -e 's/^CHOST=.*/CHOST="aarch64-unknown-linux-gnu"/' /etc/makepkg.conf >"$work/makepkg.conf"
+
+# A local build outranks the repository's build of the same source.
+for package in omarchy-settings-dev omarchy-dev; do
+  cp -a "$pkgs/pkgbuilds/$package" "$work/$package"
+  sed -i 's/^pkgrel=.*/pkgrel=99/' "$work/$package/PKGBUILD"
+  if ! (cd "$work/$package" && OMARCHY_SRC=$src PKGDEST=$out makepkg --config "$work/makepkg.conf" -f --nodeps --noconfirm) >"$work/$package.log" 2>&1; then
+    tail -20 "$work/$package.log" >&2
+    echo "Error: building $package failed" >&2
+    exit 1
+  fi
+done
+
+ls -1 "$out"
