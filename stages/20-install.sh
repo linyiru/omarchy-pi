@@ -1,13 +1,14 @@
 #!/bin/bash
 
-# Runs in the image root as root. Declares the image a Raspberry Pi build, then
-# installs the settings package (it carries the platform guard, which must be
+# Runs in the image root as root. Brings the root up to date and declares the
+# image a Raspberry Pi build, then installs the settings package (it carries the platform guard, which must be
 # resident before any platform package), the Pi's default package set and the
 # runtime, and runs Omarchy's system setup with provisioning deferred to the
 # first boot, as the ISO does for a deferred-provisioning install.
 #
 # Expects /root/pkgs (local omarchy-dev and omarchy-settings-dev builds) and
-# /root/rpi-pkgs.txt (omarchy-pkg-defaults raspberrypi).
+# /root/rpi-pkgs.txt (omarchy-pkg-defaults raspberrypi). bin/build-image has
+# already downloaded every package these transactions install.
 
 set -euo pipefail
 
@@ -23,6 +24,8 @@ timed() {
   echo "TIMING $label $((SECONDS - start))s"
 }
 
+timed upgrade "${pacman_build[@]}" -Su
+
 install -d -m 0755 /var/lib/omarchy/image
 printf 'format=1\nplatform=raspberrypi\n' >/var/lib/omarchy/image/target
 chmod 0644 /var/lib/omarchy/image/target
@@ -37,7 +40,6 @@ timed settings "${pacman_build[@]}" -U --needed /root/pkgs/omarchy-settings-dev-
 timed luarocks "${pacman_build[@]}" -S --needed lua51 luarocks
 timed nvim "${pacman_build[@]}" -S --needed omarchy-nvim
 mapfile -t packages </root/rpi-pkgs.txt
-timed download "${pacman_build[@]}" -Sw --needed "${packages[@]}"
 timed packages "${pacman_build[@]}" -S --needed "${packages[@]}"
 timed runtime "${pacman_build[@]}" -U --needed /root/pkgs/omarchy-dev-*.pkg.tar.zst
 

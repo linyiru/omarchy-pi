@@ -3,8 +3,9 @@
 # Runs in the image root as root, last. Arms first-boot owner setup the way a
 # deferred-provisioning ISO install does, and strips what only the build
 # needed, and the stock accounts: its pacman keyring (each machine makes its own at first boot, asked
-# for by /var/lib/omarchy/image/pacman-keyring), the package cache, the staged
-# packages, and the build's resolv.conf.
+# for by /var/lib/omarchy/image/pacman-keyring), the staged packages, and the
+# build's resolv.conf. The package cache was the build host's, never the
+# image's.
 #
 # No Node tarball is staged: install/user/mise-work.sh looks only for a
 # linux-x64 one, so first boot fetches Node from the network on a Pi.
@@ -35,7 +36,7 @@ usermod -p '!*' root
 echo omarchy >/etc/hostname
 
 rm -rf /etc/pacman.d/gnupg
-rm -rf /var/cache/pacman/pkg/* /root/pkgs /root/rpi-pkgs.txt /root/probe.txt
+rm -rf /root/pkgs /root/rpi-pkgs.txt /root/probe.txt
 
 if [[ -e /etc/resolv.conf.image || -L /etc/resolv.conf.image ]]; then
   mv -f /etc/resolv.conf.image /etc/resolv.conf

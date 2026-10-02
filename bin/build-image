@@ -6,7 +6,8 @@
 #
 # Usage: bin/build-image <omarchy-checkout> <omarchy-pkgs-checkout> <out.img> [size]
 #
-# Downloads and checks go to $OMARCHY_PI_CACHE (default ~/.cache/omarchy-pi).
+# Downloads and checks go to $OMARCHY_PI_CACHE (default ~/.cache/omarchy-pi),
+# packages to its pkg/, which later builds reuse.
 
 set -euo pipefail
 
@@ -32,13 +33,23 @@ tarball=$cache/$tarball_name
 rootfs=$cache/rootfs
 pkgs=$cache/pkgs
 mnt=$cache/mnt
+pkg_cache=$cache/pkg
 
 log() {
   echo "==> [$(date +%T)] $*"
 }
 
 in_image() {
-  sudo systemd-nspawn -q -D "$mnt" --bind-ro="$repo:/opt/omarchy-pi" --pipe "$@"
+  sudo systemd-nspawn -q -D "$mnt" --bind-ro="$repo:/opt/omarchy-pi" \
+    --bind="$pkg_cache:/var/cache/pacman/pkg" --pipe "$@"
+}
+
+# pacman under qemu-user downloads at a tenth of the host's speed, so the host's
+# own pacman fetches the packages, with the image's databases and keyring.
+host_pacman() {
+  sudo pacman --config "$cache/pacman.conf" --arch aarch64 --root "$mnt" \
+    --dbpath "$mnt/var/lib/pacman" --gpgdir "$mnt/etc/pacman.d/gnupg" \
+    --cachedir "$pkg_cache" --noconfirm --noprogressbar "$@"
 }
 
 cleanup() {
@@ -86,13 +97,33 @@ sudo cp /etc/resolv.conf "$mnt/etc/resolv.conf"
 
 sudo install -d "$mnt/root/pkgs"
 sudo cp "$pkgs"/*.pkg.tar.zst "$mnt/root/pkgs/"
-OMARCHY_PATH=$omarchy "$omarchy/bin/omarchy-pkg-defaults" raspberrypi | sudo tee "$mnt/root/rpi-pkgs.txt" >/dev/null
+OMARCHY_PATH=$omarchy "$omarchy/bin/omarchy-pkg-defaults" raspberrypi >"$cache/rpi-pkgs.txt"
+sudo cp "$cache/rpi-pkgs.txt" "$mnt/root/rpi-pkgs.txt"
+mapfile -t packages <"$cache/rpi-pkgs.txt"
+sudo install -d "$pkg_cache"
 
-for stage in 10-repos 20-install 25-boot 30-finalize; do
-  log "$stage"
-  start=$SECONDS
-  in_image bash "/opt/omarchy-pi/stages/$stage.sh"
-  echo "TIMING $stage $((SECONDS - start))s"
+stage() {
+  log "$1"
+  local start=$SECONDS
+  in_image bash "/opt/omarchy-pi/stages/$1.sh"
+  echo "TIMING $1 $((SECONDS - start))s"
+}
+
+stage 10-repos
+
+log "Downloading packages"
+start=$SECONDS
+# The cache sits in a home directory, which the alpm user can't enter, so the
+# host downloads as root; the install stage still checks every signature.
+sed -e "s|^Include = /etc/|Include = $mnt/etc/|" -e '/^DownloadUser/d' "$mnt/etc/pacman.conf" >"$cache/pacman.conf"
+# Everything stages/20-install.sh's transactions install: the upgrade, its
+# bootstrap set, the Pi's packages, and what the local packages depend on.
+host_pacman -Suw --needed base-devel git omarchy-keyring snapper lua51 luarocks omarchy-nvim "${packages[@]}"
+host_pacman -Uw --needed "$pkgs"/*.pkg.tar.zst
+echo "TIMING download $((SECONDS - start))s"
+
+for name in 20-install 25-boot 30-finalize; do
+  stage "$name"
 done
 
 log "Factory snapshot"

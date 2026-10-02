@@ -2,7 +2,8 @@
 
 # Runs in the image root as root. Trusts Arch Linux ARM's and Omarchy's
 # signing keys, adds Omarchy's edge repository (the only channel qualified on
-# aarch64) and brings the root up to date.
+# aarch64) and refreshes the package databases. stages/20-install.sh brings
+# the root up to date, once bin/build-image has downloaded the packages.
 #
 # The keyring made here exists only for the build: the image ships without a
 # master key, and each machine makes its own at first boot.
@@ -27,4 +28,4 @@ if ! grep -qx '\[omarchy\]' /etc/pacman.conf; then
 fi
 
 # qemu-user implements no Landlock, so pacman's download sandbox can't start.
-pacman --noconfirm --disable-sandbox -Syu
+pacman --noconfirm --disable-sandbox -Sy
