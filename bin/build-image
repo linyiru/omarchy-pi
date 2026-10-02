@@ -1,0 +1,97 @@
+#!/bin/bash
+
+# Builds an Omarchy Raspberry Pi disk image from Arch Linux ARM's rpi-aarch64
+# root, an Omarchy checkout and an omarchy-pkgs checkout. Runs as a user with
+# sudo; on an x86_64 host the image root runs under qemu-user-static.
+#
+# Usage: bin/build-image <omarchy-checkout> <omarchy-pkgs-checkout> <out.img> [size]
+#
+# Downloads and checks go to $OMARCHY_PI_CACHE (default ~/.cache/omarchy-pi).
+
+set -euo pipefail
+
+if (( $# < 3 )); then
+  echo "Usage: $0 <omarchy-checkout> <omarchy-pkgs-checkout> <out.img> [size]" >&2
+  exit 2
+fi
+
+here=$(dirname -- "$(realpath -- "$0")")
+repo=$(dirname -- "$here")
+omarchy=$(realpath -- "$1")
+omarchy_pkgs=$(realpath -- "$2")
+image=$(realpath -m -- "$3")
+size=${4:-16G}
+cache=${OMARCHY_PI_CACHE:-$HOME/.cache/omarchy-pi}
+
+tarball_name=ArchLinuxARM-rpi-aarch64-latest.tar.gz
+tarball_url=http://os.archlinuxarm.org/os/$tarball_name
+alarm_key=68B3537F39A313B3E574D06777193F152BDBE6A6
+
+mkdir -p "$cache"
+tarball=$cache/$tarball_name
+rootfs=$cache/rootfs
+pkgs=$cache/pkgs
+mnt=$cache/mnt
+
+in_image() {
+  sudo systemd-nspawn -q -D "$mnt" --bind-ro="$repo:/opt/omarchy-pi" --pipe "$@"
+}
+
+cleanup() {
+  if mountpoint -q "$mnt"; then
+    sudo "$here/disk" umount "$mnt" || true
+  fi
+}
+trap cleanup EXIT
+
+echo "==> Arch Linux ARM root"
+if [[ ! -f $tarball ]]; then
+  curl -fL --retry 3 -o "$tarball.part" "$tarball_url"
+  curl -fL --retry 3 -o "$tarball.sig" "$tarball_url.sig"
+  mv "$tarball.part" "$tarball"
+fi
+export GNUPGHOME=$cache/gnupg
+mkdir -p -m 0700 "$GNUPGHOME"
+gpg --batch --list-keys "$alarm_key" >/dev/null 2>&1 ||
+  gpg --batch --keyserver hkps://keyserver.ubuntu.com --recv-keys "$alarm_key"
+gpg --batch --status-fd 1 --verify "$tarball.sig" "$tarball" 2>/dev/null | grep -q "VALIDSIG $alarm_key" || {
+  echo "Error: $tarball is not signed by Arch Linux ARM ($alarm_key)" >&2
+  exit 1
+}
+
+echo "==> Omarchy packages"
+rm -rf "$pkgs"
+"$here/build-packages" "$omarchy" "$omarchy_pkgs" "$pkgs"
+
+echo "==> Disk"
+sudo rm -rf "$rootfs"
+sudo mkdir -p "$rootfs"
+sudo bsdtar -xpf "$tarball" -C "$rootfs"
+sudo "$here/disk" create "$image" "$size"
+sudo "$here/disk" mount "$image" "$mnt"
+sudo rsync -aHAX --exclude=/boot/ "$rootfs/" "$mnt/"
+# FAT keeps no owners, modes or links.
+sudo rsync -rt "$rootfs/boot/" "$mnt/boot/"
+sudo rm -rf "$rootfs"
+sudo "$here/disk" fstab "$mnt"
+
+# The root's resolv.conf points at systemd-resolved, which doesn't run here.
+# stages/30-finalize.sh puts it back.
+sudo mv "$mnt/etc/resolv.conf" "$mnt/etc/resolv.conf.image"
+sudo cp /etc/resolv.conf "$mnt/etc/resolv.conf"
+
+sudo install -d "$mnt/root/pkgs"
+sudo cp "$pkgs"/*.pkg.tar.zst "$mnt/root/pkgs/"
+OMARCHY_PATH=$omarchy "$omarchy/bin/omarchy-pkg-defaults" raspberrypi | sudo tee "$mnt/root/rpi-pkgs.txt" >/dev/null
+
+for stage in 10-repos 20-install 25-boot 30-finalize; do
+  echo "==> $stage"
+  in_image bash "/opt/omarchy-pi/stages/$stage.sh"
+done
+
+echo "==> Factory snapshot"
+sudo "$here/disk" factory "$mnt"
+sudo "$here/disk" umount "$mnt"
+trap - EXIT
+
+echo "Built $image"
