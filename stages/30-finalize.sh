@@ -5,7 +5,8 @@
 # needed, and the stock accounts: its pacman keyring (each machine makes its own at first boot, asked
 # for by /var/lib/omarchy/image/pacman-keyring), the staged packages, and the
 # build's resolv.conf. The package cache was the build host's, never the
-# image's.
+# image's. Last, it marks the root up to date, so the first boot redoes none of
+# the build's work.
 
 set -euo pipefail
 
@@ -38,3 +39,16 @@ rm -rf /root/pkgs /root/rpi-pkgs.txt /root/probe.txt
 if [[ -e /etc/resolv.conf.image || -L /etc/resolv.conf.image ]]; then
   mv -f /etc/resolv.conf.image /etc/resolv.conf
 fi
+
+# The root has no /etc/.updated or /var/.updated, so the first boot would treat
+# /usr as freshly updated and redo, before anything else starts, what the build
+# can do now (ldconfig alone took 8 s in the emulated Pi). Run what each
+# ConditionNeedsUpdate unit runs, then mark the root current, as
+# systemd-update-done.service does. Nothing may change /usr after this.
+ldconfig -X
+systemd-sysusers
+journalctl --update-catalog
+if [[ -e /etc/udev/hwdb.bin || -n $(ls -A /etc/udev/hwdb.d 2>/dev/null) ]]; then
+  systemd-hwdb update
+fi
+/usr/lib/systemd/systemd-update-done
