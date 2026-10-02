@@ -1,0 +1,94 @@
+#!/usr/bin/env python3
+
+"""Talks to the VM bin/run-vm started, over its QMP socket.
+
+Usage:
+  bin/vm-qmp screendump <out.png>
+  bin/vm-qmp type <text>          types text, then Enter
+  bin/vm-qmp key <key>...         presses keys together, e.g. ctrl alt f2
+  bin/vm-qmp powerdown           asks the guest to shut down
+  bin/vm-qmp quit
+"""
+
+import json
+import os
+import socket
+import sys
+import time
+
+state = os.path.join(os.environ.get("OMARCHY_PI_CACHE", os.path.expanduser("~/.cache/omarchy-pi")), "vm")
+
+# QEMU's qcode names for the characters a shell or form needs.
+symbols = {
+    " ": "spc", "-": "minus", "=": "equal", ".": "dot", ",": "comma", "/": "slash",
+    ";": "semicolon", "'": "apostrophe", "[": "bracket_left", "]": "bracket_right",
+    "\\": "backslash", "`": "grave_accent",
+}
+shifted = {
+    "_": "minus", "+": "equal", ">": "dot", "<": "comma", "?": "slash", ":": "semicolon",
+    '"': "apostrophe", "{": "bracket_left", "}": "bracket_right", "|": "backslash", "~": "grave_accent",
+    "!": "1", "@": "2", "#": "3", "$": "4", "%": "5", "^": "6", "&": "7", "*": "8", "(": "9", ")": "0",
+}
+
+
+class Qmp:
+    def __init__(self):
+        self.sock = socket.socket(socket.AF_UNIX)
+        self.sock.connect(os.path.join(state, "qmp.sock"))
+        self.file = self.sock.makefile("rw")
+        self.read()
+        self.run("qmp_capabilities")
+
+    def read(self):
+        while True:
+            reply = json.loads(self.file.readline())
+            if "event" not in reply:
+                return reply
+
+    def run(self, command, **arguments):
+        self.file.write(json.dumps({"execute": command, "arguments": arguments}) + "\n")
+        self.file.flush()
+        reply = self.read()
+        if "error" in reply:
+            sys.exit(f"{command}: {reply['error']['desc']}")
+        return reply["return"]
+
+    def keys(self, *names):
+        self.run("send-key", keys=[{"type": "qcode", "data": name} for name in names])
+        time.sleep(0.05)
+
+
+def qcodes(char):
+    if char.isalpha() and char.isupper():
+        return ["shift", char.lower()]
+    if char.isalnum():
+        return [char]
+    if char in symbols:
+        return [symbols[char]]
+    if char in shifted:
+        return ["shift", shifted[char]]
+    sys.exit(f"no key for {char!r}")
+
+
+def main():
+    if len(sys.argv) < 2:
+        sys.exit(__doc__)
+    qmp = Qmp()
+    command, args = sys.argv[1], sys.argv[2:]
+    if command == "screendump" and len(args) == 1:
+        qmp.run("screendump", filename=os.path.abspath(args[0]), format="png")
+    elif command == "type" and len(args) == 1:
+        for char in args[0]:
+            qmp.keys(*qcodes(char))
+        qmp.keys("ret")
+    elif command == "key" and args:
+        qmp.keys(*args)
+    elif command == "powerdown" and not args:
+        qmp.run("system_powerdown")
+    elif command == "quit" and not args:
+        qmp.run("quit")
+    else:
+        sys.exit(__doc__)
+
+
+main()
