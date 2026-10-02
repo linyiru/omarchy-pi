@@ -14,13 +14,16 @@
 set -euo pipefail
 
 # btrfs-overlayfs (from limine-snapper-sync) boots read-only snapshots from
-# Limine's menu. U-Boot has no such menu, and the hook isn't installed.
+# Limine's menu. U-Boot has no such menu, and the hook isn't installed. The
+# boot package refuses an encrypted root, and on a plain one the encrypt hook
+# only reports, every boot, that the root isn't LUKS.
 cat >/etc/mkinitcpio.conf.d/90-omarchy-pi-boot.conf <<'CONF'
-# Written by the Omarchy Pi image build: U-Boot boots no snapshots, so drop the
-# snapshot hook from Omarchy's HOOKS baseline (00-omarchy-hooks.conf).
+# Written by the Omarchy Pi image build: U-Boot boots no snapshots and the root
+# isn't encrypted, so drop the snapshot and encrypt hooks from Omarchy's HOOKS
+# baseline (00-omarchy-hooks.conf).
 _omarchy_pi_hooks=()
 for _omarchy_pi_hook in "${HOOKS[@]}"; do
-  [[ $_omarchy_pi_hook == "btrfs-overlayfs" ]] || _omarchy_pi_hooks+=("$_omarchy_pi_hook")
+  [[ $_omarchy_pi_hook == "btrfs-overlayfs" || $_omarchy_pi_hook == "encrypt" ]] || _omarchy_pi_hooks+=("$_omarchy_pi_hook")
 done
 HOOKS=("${_omarchy_pi_hooks[@]}")
 unset _omarchy_pi_hooks _omarchy_pi_hook
