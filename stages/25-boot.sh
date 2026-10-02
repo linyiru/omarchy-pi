@@ -47,5 +47,10 @@ source /usr/lib/omarchy/rpi-boot/common.sh
 point_boot_txt_at_root
 build_boot_scr
 
+# Without autodetect, kms would add every GPU driver and its firmware (nvidia
+# and amdgpu alone are 240 MB), though the first boot needs none of them before
+# the root is mounted: the Pi's own display driver loads from the root, and the
+# rebuild on the Pi puts it back in. Leaving kms out took the image's initramfs
+# from 169 MB to 27 MB, and its build from 162 s to 62 s in the emulated Pi.
 rm -f /etc/pacman.d/hooks/90-mkinitcpio-install.hook
-mkinitcpio -k "$(kernel_release)" -S autodetect -g /boot/initramfs-linux.img
+mkinitcpio -k "$(kernel_release)" -S autodetect,kms -g /boot/initramfs-linux.img
