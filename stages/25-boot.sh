@@ -35,6 +35,10 @@ for _omarchy_pi_hook in "${HOOKS[@]}"; do
 done
 HOOKS=("${_omarchy_pi_hooks[@]}")
 unset _omarchy_pi_hooks _omarchy_pi_hook
+
+# Arch Linux ARM's mkinitcpio defaults to gzip. The kernel unpacks zstd too,
+# and in about half the time.
+COMPRESSION=zstd
 CONF
 
 pacman --noconfirm --disable-sandbox -U --needed /root/pkgs/omarchy-rpi-boot-*.pkg.tar.zst
