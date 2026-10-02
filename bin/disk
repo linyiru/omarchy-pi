@@ -1,0 +1,126 @@
+#!/bin/bash
+
+# Makes and mounts a Raspberry Pi disk image laid out like an Omarchy ISO
+# install: an MBR (the Pi firmware reads only FAT, from the first partition)
+# with a FAT32 boot partition and a btrfs root holding the @, @home, @log and
+# @pkg subvolumes. The image root is built in place, mounted, so snapper and
+# the factory snapshot see the real filesystem.
+#
+# Usage:
+#   sudo bin/disk create <out.img> [size, default 16G]
+#   sudo bin/disk mount <disk.img> <dir>
+#   sudo bin/disk fstab <dir>           write the mounted root's fstab
+#   sudo bin/disk factory <dir>         snapshot @ as a read-only @factory
+#   sudo bin/disk umount <dir>
+
+set -euo pipefail
+
+btrfs_opts="noatime,compress=zstd"
+subvolumes=(@:/ @home:/home @log:/var/log @pkg:/var/cache/pacman/pkg)
+
+usage() {
+  sed -n '/^# Usage:/,/^$/p' "$0" | sed 's/^# \{0,1\}//' >&2
+  exit 2
+}
+
+partition() {
+  local loop=$1 n=$2
+  echo "${loop}p$n"
+}
+
+create() {
+  local out=$1 size=${2:-16G} loop top
+
+  rm -f "$out"
+  truncate -s "$size" "$out"
+  sfdisk --quiet "$out" <<SFDISK
+label: dos
+start=8MiB, size=512MiB, type=c, bootable
+start=520MiB, type=83
+SFDISK
+
+  loop=$(losetup --find --show --partscan "$out")
+  mkfs.vfat -F 32 -n BOOT "$(partition "$loop" 1)" >/dev/null
+  mkfs.btrfs -q -L omarchy "$(partition "$loop" 2)"
+
+  top=$(mktemp -d)
+  mount "$(partition "$loop" 2)" "$top"
+  for entry in "${subvolumes[@]}"; do
+    btrfs -q subvolume create "$top/${entry%%:*}"
+  done
+  # Where snapper create-config would put it. Made here because qemu-user
+  # passes no btrfs ioctls, so snapper in the image root cannot.
+  btrfs -q subvolume create "$top/@/.snapshots"
+  chmod 0750 "$top/@/.snapshots"
+  umount "$top"
+  rmdir "$top"
+  losetup -d "$loop"
+}
+
+mount_image() {
+  local image=$1 dir=$2 loop root
+
+  loop=$(losetup --find --show --partscan "$image")
+  root=$(partition "$loop" 2)
+  mkdir -p "$dir"
+  for entry in "${subvolumes[@]}"; do
+    mkdir -p "$dir${entry#*:}"
+    mount -o "$btrfs_opts,subvol=${entry%%:*}" "$root" "$dir${entry#*:}"
+  done
+  mkdir -p "$dir/boot"
+  mount "$(partition "$loop" 1)" "$dir/boot"
+}
+
+write_fstab() {
+  local dir=$1 root_uuid boot_uuid
+
+  root_uuid=$(findmnt -n -o UUID --target "$dir")
+  boot_uuid=$(findmnt -n -o UUID --target "$dir/boot")
+  {
+    echo "# <device>  <mount>  <fs>  <options>  <dump>  <pass>"
+    for entry in "${subvolumes[@]}"; do
+      printf 'UUID=%s  %s  btrfs  %s,subvol=%s  0 0\n' "$root_uuid" "${entry#*:}" "$btrfs_opts" "${entry%%:*}"
+    done
+    printf 'UUID=%s  /boot  vfat  rw,relatime,fmask=0022,dmask=0022  0 2\n' "$boot_uuid"
+  } >"$dir/etc/fstab"
+}
+
+factory() {
+  local dir=$1 top
+
+  top=$(mktemp -d)
+  mount -o subvolid=5 "$(findmnt -n -o SOURCE --target "$dir" | sed 's/\[.*//')" "$top"
+  if [[ -d $top/@factory ]]; then
+    btrfs -q subvolume delete "$top/@factory"
+  fi
+  btrfs -q subvolume snapshot -r "$top/@" "$top/@factory"
+  umount "$top"
+  rmdir "$top"
+}
+
+umount_image() {
+  local dir=$1 device
+
+  device=$(findmnt -n -o SOURCE --target "$dir/boot")
+  umount -R "$dir"
+  # A desktop's udisks may have auto-mounted the new partitions too, and any
+  # mount left keeps the loop device.
+  local partition target
+  for partition in "$device" "${device%p1}p2"; do
+    while read -r target; do
+      [[ -z $target ]] || umount "$target"
+    done < <(findmnt -n -o TARGET -S "$partition" || true)
+  done
+  losetup -d "${device%p1}"
+}
+
+(( EUID == 0 )) || usage
+
+case ${1:-} in
+  create) (( $# >= 2 )) || usage; create "$2" "${3:-}" ;;
+  mount) (( $# == 3 )) || usage; mount_image "$2" "$3" ;;
+  fstab) (( $# == 2 )) || usage; write_fstab "$2" ;;
+  factory) (( $# == 2 )) || usage; factory "$2" ;;
+  umount) (( $# == 2 )) || usage; umount_image "$2" ;;
+  *) usage ;;
+esac
