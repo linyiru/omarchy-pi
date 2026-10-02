@@ -15,6 +15,14 @@ set -euo pipefail
 # here. The image's own pacman.conf keeps it.
 pacman_build=(pacman --noconfirm --disable-sandbox)
 
+# Prints how long each step took, for bin/build-image's timing summary.
+timed() {
+  local label=$1 start=$SECONDS
+  shift
+  "$@"
+  echo "TIMING $label $((SECONDS - start))s"
+}
+
 install -d -m 0755 /var/lib/omarchy/image
 printf 'format=1\nplatform=raspberrypi\n' >/var/lib/omarchy/image/target
 chmod 0644 /var/lib/omarchy/image/target
@@ -24,13 +32,14 @@ chmod 0644 /var/lib/omarchy/image/target
 # LuaRocks goes in its own transaction before omarchy-nvim, as on the ISO.
 # omarchy-dev brings snapper only on x86_64, but install/config/snapper.sh
 # runs everywhere, and factory reset rests on the same btrfs layout.
-"${pacman_build[@]}" -S --needed base-devel git omarchy-keyring snapper
-"${pacman_build[@]}" -U --needed /root/pkgs/omarchy-settings-dev-*.pkg.tar.zst
-"${pacman_build[@]}" -S --needed lua51 luarocks
-"${pacman_build[@]}" -S --needed omarchy-nvim
+timed bootstrap "${pacman_build[@]}" -S --needed base-devel git omarchy-keyring snapper
+timed settings "${pacman_build[@]}" -U --needed /root/pkgs/omarchy-settings-dev-*.pkg.tar.zst
+timed luarocks "${pacman_build[@]}" -S --needed lua51 luarocks
+timed nvim "${pacman_build[@]}" -S --needed omarchy-nvim
 mapfile -t packages </root/rpi-pkgs.txt
-"${pacman_build[@]}" -S --needed "${packages[@]}"
-"${pacman_build[@]}" -U --needed /root/pkgs/omarchy-dev-*.pkg.tar.zst
+timed download "${pacman_build[@]}" -Sw --needed "${packages[@]}"
+timed packages "${pacman_build[@]}" -S --needed "${packages[@]}"
+timed runtime "${pacman_build[@]}" -U --needed /root/pkgs/omarchy-dev-*.pkg.tar.zst
 
 # snapper create-config cannot make /.snapshots under qemu-user (no btrfs
 # ioctls); bin/disk made it, and with a config present install/config/snapper.sh
@@ -67,4 +76,4 @@ export OMARCHY_INSTALL=/usr/share/omarchy/install
 export OMARCHY_MIRROR=edge
 export OMARCHY_INSTALL_LOG_FILE=/var/log/omarchy-install.log
 export OMARCHY_LOG_TO_STDOUT=1
-/usr/bin/omarchy-apply-system --defer-provisioning --first-install
+timed apply-system /usr/bin/omarchy-apply-system --defer-provisioning --first-install

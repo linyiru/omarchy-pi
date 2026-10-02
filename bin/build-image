@@ -33,6 +33,10 @@ rootfs=$cache/rootfs
 pkgs=$cache/pkgs
 mnt=$cache/mnt
 
+log() {
+  echo "==> [$(date +%T)] $*"
+}
+
 in_image() {
   sudo systemd-nspawn -q -D "$mnt" --bind-ro="$repo:/opt/omarchy-pi" --pipe "$@"
 }
@@ -44,7 +48,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "==> Arch Linux ARM root"
+log "Arch Linux ARM root"
 if [[ ! -f $tarball ]]; then
   curl -fL --retry 3 -o "$tarball.part" "$tarball_url"
   curl -fL --retry 3 -o "$tarball.sig" "$tarball_url.sig"
@@ -59,11 +63,11 @@ gpg --batch --status-fd 1 --verify "$tarball.sig" "$tarball" 2>/dev/null | grep 
   exit 1
 }
 
-echo "==> Omarchy packages"
+log "Omarchy packages"
 rm -rf "$pkgs"
 "$here/build-packages" "$omarchy" "$omarchy_pkgs" "$pkgs"
 
-echo "==> Disk"
+log "Disk"
 sudo rm -rf "$rootfs"
 sudo mkdir -p "$rootfs"
 sudo bsdtar -xpf "$tarball" -C "$rootfs"
@@ -85,13 +89,16 @@ sudo cp "$pkgs"/*.pkg.tar.zst "$mnt/root/pkgs/"
 OMARCHY_PATH=$omarchy "$omarchy/bin/omarchy-pkg-defaults" raspberrypi | sudo tee "$mnt/root/rpi-pkgs.txt" >/dev/null
 
 for stage in 10-repos 20-install 25-boot 30-finalize; do
-  echo "==> $stage"
+  log "$stage"
+  start=$SECONDS
   in_image bash "/opt/omarchy-pi/stages/$stage.sh"
+  echo "TIMING $stage $((SECONDS - start))s"
 done
 
-echo "==> Factory snapshot"
+log "Factory snapshot"
 sudo "$here/disk" factory "$mnt"
 sudo "$here/disk" umount "$mnt"
 trap - EXIT
 
+echo "TIMING total ${SECONDS}s"
 echo "Built $image"
