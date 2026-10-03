@@ -51,6 +51,35 @@ point_boot_txt_at_root() {
   boot_txt_points_at_root || fail "could not point $boot_txt at the @ subvolume"
 }
 
+# U-Boot 2025.01 names one DTB for every Pi 5, the C1 stepping's. The D0
+# stepping (every 16 GB board, and the later smaller ones) moved the pin
+# controller's registers, so under that DTB the kernel panics probing it. The
+# firmware's own device tree can't tell them apart: it hands U-Boot the C1 one
+# on a D0 board too. The PCB revision can, and newer U-Boot picks by it.
+d0_dtb=broadcom/bcm2712-d-rpi-5-b.dtb
+
+boot_txt_picks_d0_dtb() {
+  grep -q "setenv fdtfile $d0_dtb" "$boot_txt"
+}
+
+pick_d0_dtb_in_boot_txt() {
+  if ! boot_txt_picks_d0_dtb; then
+    sed -i '/^part uuid /r /dev/stdin' "$boot_txt" <<BOOT
+
+# Omarchy Pi: the Pi 5's D0 stepping needs its own device tree. Its PCB
+# revision says which stepping it is.
+if test "\${board_rev}" = "0x17"; then
+  setexpr pcb_rev \${board_revision} "&" 0xf
+  if test "\${pcb_rev}" = "1"; then
+    setenv fdtfile $d0_dtb
+  fi
+fi
+BOOT
+  fi
+  boot_txt_picks_d0_dtb || fail "could not make $boot_txt pick the D0 device tree"
+  [[ -f $boot_dir/dtbs/$d0_dtb ]] || fail "$boot_dir/dtbs/$d0_dtb is missing"
+}
+
 build_boot_scr() {
   mkimage -A arm -O linux -T script -C none -n "U-Boot boot script" -d "$boot_txt" "$boot_scr" >/dev/null
 }
@@ -77,6 +106,8 @@ verify_boot_chain() {
   [[ -s $boot_dir/initramfs-linux.img ]] || fail "$boot_dir/initramfs-linux.img is missing"
   [[ -d $boot_dir/dtbs ]] || fail "$boot_dir/dtbs is missing"
   boot_txt_points_at_root || fail "$boot_txt does not root on the @ subvolume"
+  boot_txt_picks_d0_dtb || fail "$boot_txt does not pick the Pi 5 D0 device tree"
+  [[ -f $boot_dir/dtbs/$d0_dtb ]] || fail "$boot_dir/dtbs/$d0_dtb is missing"
   boot_scr_current || fail "$boot_scr is not built from $boot_txt"
 
   release=$(kernel_release)

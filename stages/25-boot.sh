@@ -45,6 +45,7 @@ pacman --noconfirm --disable-sandbox -U --needed /root/pkgs/omarchy-rpi-boot-*.p
 
 source /usr/lib/omarchy/rpi-boot/common.sh
 point_boot_txt_at_root
+pick_d0_dtb_in_boot_txt
 build_boot_scr
 
 # Without autodetect, kms would add every GPU driver and its firmware (nvidia
