@@ -48,7 +48,6 @@ What to know:
 
 - SSH is installed but its port is closed; open it with `sudo ufw allow 22/tcp`.
 - The root partition stays at the image's size; it is not grown to fill the card.
-- Kernel messages, such as ufw's logged drops, print over the owner setup screen on tty1, because `cmdline.txt` doesn't set `quiet` yet.
 
 ## What the image is
 

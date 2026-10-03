@@ -18,6 +18,7 @@ cmdline_txt=$boot_dir/cmdline.txt
 kernel=$boot_dir/kernel8.img
 initramfs=$boot_dir/initramfs-linux.img
 root_flags=(rootfstype=btrfs rootflags=subvol=@ rw)
+quiet_args=(quiet loglevel=0 systemd.show_status=false rd.udev.log_level=0 vt.global_cursor_default=0)
 provisioning_dir=/var/lib/omarchy/provisioning
 
 fail() {
@@ -60,7 +61,12 @@ cmdline_points_at_root() {
   done
 }
 
-# Replaces linux-rpi's default root (root=/dev/mmcblk0p2 rw) and keeps the rest.
+# Replaces linux-rpi's default root (root=/dev/mmcblk0p2 rw) and keeps the rest,
+# adding the quiet console Omarchy boots with on x86
+# (etc/limine-entry-tool.d/omarchy-defaults.conf, less the splash, as the Pi has
+# no Plymouth). Without it the kernel's messages, such as ufw's logged drops
+# and brcmfmac's channel errors, print over first-boot setup on tty1.
+# cmdline.txt is a linux-rpi backup file, so upgrades keep the line.
 point_cmdline_at_root() {
   local args arg line
   if ! cmdline_points_at_root; then
@@ -71,6 +77,9 @@ point_cmdline_at_root() {
         root=* | rootfstype=* | rootflags=* | rw | ro) ;;
         *) line+=("$arg") ;;
       esac
+    done
+    for arg in "${quiet_args[@]}"; do
+      [[ " ${line[*]} " == *" $arg "* ]] || line+=("$arg")
     done
     echo "${line[*]}" >"$cmdline_txt"
   fi
