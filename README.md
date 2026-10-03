@@ -35,18 +35,6 @@ What to know:
 - SSH is installed but its port is closed; open it with `sudo ufw allow 22/tcp`.
 - The root partition stays at the image's size; it is not grown to fill the card.
 
-## Try it in a VM
-
-With `qemu-system-aarch64`, `qemu-hw-display-virtio-gpu-pci`, `qemu-img`, `dtc` and `mtools`:
-
-```bash
-bin/run-vm --fresh omarchy-pi.img
-bin/vm-qmp screendump screen.png   # the display, also on VNC at 127.0.0.1:5905
-bin/vm-qmp key ret                 # keys, or `type <text>` for a line
-```
-
-QEMU's `virt` machine stands in for the Pi: its device tree is patched to claim a Raspberry Pi 5, so the first boot takes the Raspberry Pi path, and QEMU loads the kernel and initramfs itself instead of U-Boot. The disk is an overlay on the image, so the image stays as built. What a VM can't test: U-Boot, the Pi's firmware and DTBs, and its devices.
-
 ## What the image is
 
 - **Disk:** an MBR with a 512 MiB FAT32 boot partition and a btrfs root holding `@`, `@home`, `@log` and `@pkg`, as an Omarchy ISO install lays them out, plus a read-only `@factory` snapshot for factory reset (`bin/disk`).
@@ -59,7 +47,6 @@ QEMU's `virt` machine stands in for the Pi: its device tree is patched to claim 
 - `bin/build-image` - the whole build
 - `bin/build-packages` - builds the Omarchy packages and `packages/` for aarch64 on the host
 - `bin/disk` - creates, mounts and snapshots the disk image
-- `bin/run-vm`, `bin/vm-qmp` - boot the image in QEMU and drive it
 - `stages/` - run inside the image root, in order: repositories, Omarchy, boot, finalization
 - `packages/omarchy-rpi-boot` - a prototype of the boot package `omarchy-lifecycle-dispatch` expects on a Pi; unencrypted roots only
 
