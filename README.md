@@ -4,7 +4,9 @@
 
 Builds an Omarchy disk image for the Raspberry Pi from Arch Linux ARM's rpi-aarch64 root, using the Raspberry Pi platform support on the [`raspberry-pi-platform`](https://github.com/linyiru/omarchy/pull/1) branch of Omarchy.
 
-Status: a prototype. The image builds under emulation on an x86_64 host; it has not booted on hardware yet.
+Status: a prototype. The image builds under emulation on an x86_64 host and boots on a Raspberry Pi 5 (16 GB) through first-boot setup. The desktop below needs one more fix that is not in the build yet: the mainline device tree gives the Pi's firmware mailbox no DMA mapping, so the firmware never answers, and without its clocks the GPU and HDMI do not probe. The Pi also sees only 8 GB of its 16 GB.
+
+<img src="docs/pi5-desktop.png" width="1280" alt="Omarchy on a Raspberry Pi 5: fastfetch in a terminal over the Omarchy desktop">
 
 ## Build
 
