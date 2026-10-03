@@ -28,12 +28,27 @@ Tested on a Raspberry Pi 5 (16 GB) from a microSD card, with HDMI and wired Ethe
    sudo dd if=omarchy-pi.img of=/dev/sdX bs=4M conv=fsync status=progress
    ```
 
-2. Boot the Pi from the card with a screen and a keyboard attached. The first boot sets up the hardware, rebuilds the initramfs and asks for the owner (user name and password) on tty1, then comes up at the Omarchy login screen. The desktop renders on the Pi's V3D GPU.
+2. Boot the Pi from the card with a screen and a keyboard attached. The first boot sets up the hardware, rebuilds the initramfs and asks for the owner (keyboard layout, user name, password, hostname, timezone) on tty1, then logs that user in to the Omarchy desktop. The desktop renders on the Pi's V3D GPU.
+
+### How long it takes
+
+The Pi needs about 47 seconds of its own time, firmware not counted, to go from a freshly written card to the Omarchy desktop. Measured on a Raspberry Pi 5 (16 GB) from a microSD card with wired Ethernet on 2026-10-03, from the journal of that boot, in seconds since the kernel started:
+
+| step | from | to | took |
+|---|---|---|---|
+| kernel, initramfs and systemd up to first-boot setup | 0.0 | 6.5 | 6.5 s |
+| first-boot hardware setup (pacman keyring 12.6 s, initramfs rebuild 4.0 s) | 6.5 | 26.6 | 20.1 s |
+| owner setup on tty1 | 26.6 | 241.5 | waiting for input |
+| owner setup finishing (user, theme, Node.js) | 241.5 | 257.2 | 15.7 s |
+| graphical session up to Hyprland running | 257.2 | 262.3 | 5.1 s |
+
+That comes to 47.4 s outside of owner setup. The firmware stage before the kernel isn't in the journal and isn't counted. This is the baseline for later work; the pacman keyring is the largest single step.
 
 What to know:
 
 - SSH is installed but its port is closed; open it with `sudo ufw allow 22/tcp`.
 - The root partition stays at the image's size; it is not grown to fill the card.
+- Kernel messages, such as ufw's logged drops, print over the owner setup screen on tty1, because `cmdline.txt` doesn't set `quiet` yet.
 
 ## What the image is
 
