@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # reset-prepare <factory-root> [<luks-device>]. The factory root becomes @, which
-# boot.txt already roots on, so the boot files stay; they must match the
+# cmdline.txt already roots on, so the boot files stay; they must match the
 # factory root's kernel.
 source /usr/lib/omarchy/rpi-boot/common.sh
 

@@ -4,7 +4,7 @@
 
 Builds an Omarchy disk image for the Raspberry Pi from Arch Linux ARM's rpi-aarch64 root, using the Raspberry Pi platform support on the [`raspberry-pi-platform`](https://github.com/linyiru/omarchy/pull/1) branch of Omarchy.
 
-Status: a prototype. The image builds under emulation on an x86_64 host and boots on a Raspberry Pi 5 (16 GB) through first-boot setup. The desktop below needs one more fix that is not in the build yet, applied by hand after first boot (see [Run it on a Raspberry Pi 5](#run-it-on-a-raspberry-pi-5)): the mainline device tree gives the Pi's firmware mailbox no DMA mapping, so the firmware never answers, and without its clocks the GPU and HDMI do not probe. The Pi also sees only 8 GB of its 16 GB.
+Status: a prototype. The image builds under emulation on an x86_64 host and boots on a Raspberry Pi 5 (16 GB) through first-boot setup to the Omarchy desktop, with all 16 GB and the Pi's V3D GPU.
 
 <img src="docs/pi5-desktop.png" width="1280" alt="Omarchy on a Raspberry Pi 5: fastfetch in a terminal over the Omarchy desktop">
 
@@ -28,54 +28,11 @@ Tested on a Raspberry Pi 5 (16 GB) from a microSD card, with HDMI and wired Ethe
    sudo dd if=omarchy-pi.img of=/dev/sdX bs=4M conv=fsync status=progress
    ```
 
-2. Boot the Pi from the card with a screen, a keyboard and Ethernet attached. The first boot sets up the hardware, rebuilds the initramfs and asks for the owner (user name and password) on tty1. Without the fix below, the screen then stays on the console: there is no desktop yet.
-
-3. Log in on the console, or over SSH once you open its port (`sudo ufw allow 22/tcp`), and give the firmware mailbox its DMA mapping. This installs `dtc` from the network, writes a patched copy of the D0 device tree next to the original, and points `boot.txt` at it:
-
-   ```bash
-   sudo pacman -S --needed --noconfirm dtc
-   dtc -I dtb -O dts -q -o /tmp/pi5.dts /boot/dtbs/broadcom/bcm2712-d-rpi-5-b.dtb
-   cat > /tmp/pi5-mailbox.dts <<'EOF'
-   /include/ "/tmp/pi5.dts"
-
-   / {
-   	soc@107c000000 {
-   		/delete-node/ mailbox@7c013880;
-   	};
-
-   	vpu-bus {
-   		compatible = "simple-bus";
-   		#address-cells = <1>;
-   		#size-cells = <1>;
-   		ranges = <0x7c000000 0x10 0x7c000000 0x4000000>;
-   		dma-ranges = <0xc0000000 0x0 0x0 0x40000000>;
-
-   		vpu_mailbox: mailbox@7c013880 {
-   			compatible = "brcm,bcm2835-mbox";
-   			reg = <0x7c013880 0x40>;
-   			interrupts = <0 33 4>;
-   			#mbox-cells = <0>;
-   		};
-   	};
-   };
-
-   &{/firmware/rpi-firmware} {
-   	mboxes = <&vpu_mailbox>;
-   };
-   EOF
-   sudo dtc -I dts -O dtb -q -o /boot/dtbs/broadcom/bcm2712-d-rpi-5-b-mailbox.dtb /tmp/pi5-mailbox.dts
-   sudo sed -i 's|bcm2712-d-rpi-5-b.dtb|bcm2712-d-rpi-5-b-mailbox.dtb|' /boot/boot.txt
-   cd /boot && sudo ./mkscr
-   sudo reboot
-   ```
-
-4. After the reboot the Omarchy login screen comes up, and the desktop renders on the Pi's V3D GPU. `ls /dev/dri` shows `card0`, `card1` and `renderD128`.
+2. Boot the Pi from the card with a screen and a keyboard attached. The first boot sets up the hardware, rebuilds the initramfs and asks for the owner (user name and password) on tty1, then comes up at the Omarchy login screen. The desktop renders on the Pi's V3D GPU.
 
 What to know:
 
-- The steps assume a D0 board (every 16 GB Pi 5, and the later smaller ones); `boot.txt` picks the D0 device tree for those by PCB revision. A C1 board uses `bcm2712-rpi-5-b.dtb`, which these steps do not patch.
-- A kernel update replaces `bcm2712-d-rpi-5-b.dtb` but not the patched copy, so the Pi boots the new kernel with the old patched tree. Run step 3 again after one.
-- Only 8 GB of memory is visible: U-Boot passes the kernel just part of a 16 GB board's memory.
+- SSH is installed but its port is closed; open it with `sudo ufw allow 22/tcp`.
 - The root partition stays at the image's size; it is not grown to fill the card.
 
 ## Try it in a VM
@@ -93,7 +50,7 @@ QEMU's `virt` machine stands in for the Pi: its device tree is patched to claim 
 ## What the image is
 
 - **Disk:** an MBR with a 512 MiB FAT32 boot partition and a btrfs root holding `@`, `@home`, `@log` and `@pkg`, as an Omarchy ISO install lays them out, plus a read-only `@factory` snapshot for factory reset (`bin/disk`).
-- **Boot:** Arch Linux ARM's chain, unchanged: the firmware loads U-Boot (`kernel8.img`), and U-Boot's `boot.scr` loads the mainline `linux-aarch64` kernel, the board's DTB and the initramfs. Only the root flags change, to the `@` subvolume.
+- **Boot:** the way Raspberry Pi OS boots: the Pi's firmware reads `config.txt`, picks the board's device tree and overlays, and loads Raspberry Pi's kernel (Arch Linux ARM's `linux-rpi`, as `kernel8.img`) and the initramfs, with the kernel command line from `cmdline.txt`. Arch Linux ARM's root comes with the mainline `linux-aarch64` and U-Boot instead; the build replaces both. Only the root on the command line changes, to the btrfs root by UUID and its `@` subvolume.
 - **System:** the Pi's default package set from `omarchy-pkg-defaults raspberrypi`, set up by `omarchy-apply-system --defer-provisioning --first-install` as the ISO does, with hardware setup deferred to the Pi's first boot (`/var/lib/omarchy/image/target` says `platform=raspberrypi`).
 - **First boot:** makes the machine's own pacman keyring, runs the deferred hardware setup, rebuilds the initramfs for the board, then asks for the owner on tty1. Owner setup unpacks the Node.js tarball the image carries, so none of it needs the network. The image ships no account: Arch Linux ARM's `alarm` user is removed and root is locked until owner setup.
 

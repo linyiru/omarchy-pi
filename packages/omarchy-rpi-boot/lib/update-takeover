@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# update-takeover <path>... Refuses the boot files this package builds and no
+# update-takeover <path>... Refuses the boot files the boot chain builds and no
 # package owns.
 source /usr/lib/omarchy/rpi-boot/common.sh
 
 for path in "$@"; do
   case $path in
-    "$boot_scr") fail "$path is built by omarchy-rpi-boot from $boot_txt" ;;
+    "$initramfs") fail "$path is built by mkinitcpio for linux-rpi" ;;
   esac
 done

@@ -1,14 +1,14 @@
 # Prototype of the Raspberry Pi boot package omarchy-lifecycle-dispatch expects
-# (docs/lifecycle-dispatch.md): the U-Boot boot chain of an unencrypted
+# (docs/lifecycle-dispatch.md): the firmware boot chain of an unencrypted
 # Omarchy root. Built from this tree, never published.
 pkgname=omarchy-rpi-boot
-pkgver=0.1.0
+pkgver=0.2.0
 pkgrel=1
 pkgdesc="Omarchy boot operations for the Raspberry Pi (prototype)"
 arch=('aarch64')
 url="https://github.com/linyiru/omarchy-pi"
 license=('MIT')
-depends=('uboot-raspberrypi' 'uboot-tools' 'mkinitcpio' 'util-linux')
+depends=('linux-rpi' 'mkinitcpio' 'util-linux')
 
 package() {
   local lib=$startdir/lib file

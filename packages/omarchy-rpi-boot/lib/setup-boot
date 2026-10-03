@@ -1,14 +1,12 @@
 #!/bin/bash
 
-# setup-boot [image-first-boot]. Points boot.txt at the @ subvolume and the Pi
-# 5 D0 device tree, builds boot.scr from it, and rebuilds the initramfs, or asks
-# the image's first boot to.
+# setup-boot [image-first-boot]. Points cmdline.txt at the @ subvolume and
+# rebuilds the initramfs, or asks the image's first boot to.
 source /usr/lib/omarchy/rpi-boot/common.sh
 
 boot_mounted || fail "$boot_dir is not mounted"
-point_boot_txt_at_root
-pick_d0_dtb_in_boot_txt
-boot_scr_current || build_boot_scr
+point_cmdline_at_root
+config_loads_initramfs || fail "$config_txt does not load ${initramfs##*/}"
 
 if [[ ${1:-} == "image-first-boot" ]]; then
   install -m 0644 /dev/null /var/lib/omarchy/image/boot-rebuild

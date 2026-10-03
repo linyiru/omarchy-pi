@@ -131,7 +131,8 @@ sed -e "s|^Include = /etc/|Include = $mnt/etc/|" -e '/^DownloadUser/d' "$mnt/etc
 # Everything stages/20-install.sh's transactions install: the upgrade, its
 # bootstrap set, the Pi's packages, and what the local packages depend on.
 host_pacman -Suw --needed base-devel git omarchy-keyring snapper lua51 luarocks omarchy-nvim "${packages[@]}"
-host_pacman -Uw --needed "$pkgs"/*.pkg.tar.zst
+# --ask 4: the boot package's linux-rpi replaces linux-aarch64 and U-Boot.
+host_pacman -Uw --needed --ask 4 "$pkgs"/*.pkg.tar.zst
 echo "TIMING download $((SECONDS - start))s"
 
 for name in 20-install 25-boot 30-finalize; do
