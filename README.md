@@ -44,7 +44,7 @@ The Pi needs about 47 seconds of its own time, firmware not counted, to go from 
 
 That comes to 47.4 s outside of owner setup. The firmware stage before the kernel isn't in the journal and isn't counted. This is the baseline for later work; the pacman keyring is the largest single step.
 
-A second fresh card the same day, booting with the quiet console, took 38 seconds: 22 s from the kernel to the owner setup screen and 16 s finishing setup after the owner confirmed, shown here by a demo build's install finish screen (the released image goes straight to the desktop):
+A second fresh card the same day, booting with the quiet console, took 38 seconds: 22 s from the kernel to the owner setup screen and 16 s finishing setup after the owner confirmed, shown here by a demo build's install finish screen (the released image goes straight to the desktop). [docs/install-finish-screen.md](docs/install-finish-screen.md) covers what the number counts and how the demo build works:
 
 <img src="docs/installed-in-0m38s.jpg" width="960" alt="Installed Omarchy in 0m 38s, on a Raspberry Pi 5">
 
