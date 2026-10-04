@@ -24,6 +24,10 @@ install -m 0644 "$unit" /etc/systemd/system/omarchy-provision-owner.service
 install -d /etc/systemd/system/multi-user.target.wants
 ln -sfn /etc/systemd/system/omarchy-provision-owner.service /etc/systemd/system/multi-user.target.wants/
 
+# The settings Raspberry Pi Imager writes to the card (rpi-preseed.toml) answer
+# owner setup and set up Wi-Fi and SSH before it.
+pacman --noconfirm --disable-sandbox -U --needed /root/pkgs/omarchy-rpi-preseed-*.pkg.tar.zst
+
 # Arch Linux ARM's root ships the alarm account and root with published
 # passwords (alarm, root). Owner setup creates the owner and sets root's
 # password to the owner's, so the image carries neither.

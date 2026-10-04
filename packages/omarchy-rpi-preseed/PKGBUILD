@@ -1,0 +1,17 @@
+# Applies Raspberry Pi Imager's OS customisation (its rpi-preseed.toml) to an
+# Omarchy image at first boot. Built from this tree, never published.
+pkgname=omarchy-rpi-preseed
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Apply Raspberry Pi Imager's settings to an Omarchy image at first boot (prototype)"
+arch=('aarch64')
+url="https://github.com/linyiru/omarchy-pi"
+license=('MIT')
+depends=('bash' 'networkmanager' 'systemd' 'ufw' 'wireless-regdb')
+
+package() {
+  install -Dm0755 "$startdir/omarchy-rpi-preseed" "$pkgdir/usr/lib/omarchy/rpi-preseed/omarchy-rpi-preseed"
+  install -Dm0644 "$startdir/omarchy-rpi-preseed.service" "$pkgdir/usr/lib/systemd/system/omarchy-rpi-preseed.service"
+  install -dm0755 "$pkgdir/usr/lib/systemd/system/multi-user.target.wants"
+  ln -s ../omarchy-rpi-preseed.service "$pkgdir/usr/lib/systemd/system/multi-user.target.wants/omarchy-rpi-preseed.service"
+}

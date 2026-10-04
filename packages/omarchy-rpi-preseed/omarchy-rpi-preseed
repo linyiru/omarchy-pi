@@ -1,0 +1,276 @@
+#!/bin/bash
+
+# Applies the settings Raspberry Pi Imager wrote to the card (rpi-preseed.toml
+# on the boot partition, its "rpi-preseed" customisation format) to an Omarchy
+# image waiting for its owner. The account, hostname, timezone and keyboard go
+# to first-boot owner setup as answers it shows instead of asking; Wi-Fi, its
+# country and SSH are set up here, before NetworkManager and sshd start. The
+# file holds a password hash and the Wi-Fi key, so it is removed once read.
+#
+# Only what Imager writes is read: basic strings, booleans and arrays of
+# strings. Sections Omarchy has no use for ([connect], [interfaces]) and
+# per-user extras ([user] groups, passwordless_sudo) are logged and skipped.
+#
+# PRESEED_ROOT prefixes every path, for tests.
+
+set -euo pipefail
+
+root=${PRESEED_ROOT:-}
+preseed=$root/boot/rpi-preseed.toml
+provisioning=$root/var/lib/omarchy/provisioning
+answers=$provisioning/answers
+connections=$root/etc/NetworkManager/system-connections
+regdom_file=$root/etc/conf.d/wireless-regdom
+sshd_dropin=$root/etc/ssh/sshd_config.d/10-omarchy-rpi-preseed.conf
+kbd_model_map=$root/usr/share/systemd/kbd-model-map
+
+declare -A toml=()
+
+fail() {
+  echo "omarchy-rpi-preseed: $*" >&2
+  exit 1
+}
+
+note() {
+  echo "omarchy-rpi-preseed: $*"
+}
+
+# Reads a basic string at the start of $rest into $string, leaving the text
+# after its closing quote in $rest. Imager escapes only \\ and \".
+take_string() {
+  local i=1 c
+  string=""
+  while (( i < ${#rest} )); do
+    c=${rest:i:1}
+    if [[ $c == "\\" ]]; then
+      c=${rest:i+1:1}
+      [[ $c == "\\" || $c == '"' ]] || return 1
+      string+=$c
+      (( i += 2 ))
+    elif [[ $c == '"' ]]; then
+      rest=${rest:i+1}
+      return 0
+    else
+      string+=$c
+      (( i += 1 ))
+    fi
+  done
+  return 1
+}
+
+# The text after a value may hold only whitespace and a comment.
+value_ends() {
+  [[ $rest =~ ^[[:space:]]*(#.*)?$ ]]
+}
+
+# Reads the strings of an array from $rest into $items, one per line, until
+# the array closes, which may be on a later line.
+scan_array() {
+  while true; do
+    rest=${rest#"${rest%%[![:space:],]*}"}
+    if [[ -z $rest || $rest == "#"* ]]; then
+      return 0
+    elif [[ $rest == "]"* ]]; then
+      rest=${rest:1}
+      value_ends || fail "line $lineno: unexpected text after the array"
+      toml[$key]=$items
+      array=0
+      return 0
+    elif [[ $rest == '"'* ]]; then
+      take_string || fail "line $lineno: unterminated string"
+      items+=${items:+$'\n'}$string
+    else
+      fail "line $lineno: arrays hold only strings"
+    fi
+  done
+}
+
+read_preseed() {
+  local line section=""
+  key="" items="" array=0 lineno=0
+  while IFS= read -r line || [[ -n $line ]]; do
+    (( lineno += 1 ))
+    rest=$line
+
+    if (( array )); then
+      scan_array
+      continue
+    fi
+
+    rest=${rest#"${rest%%[![:space:]]*}"}
+    if [[ -z $rest || $rest == "#"* ]]; then
+      continue
+    elif [[ $rest =~ ^\[([A-Za-z0-9_-]+)\][[:space:]]*(#.*)?$ ]]; then
+      section=${BASH_REMATCH[1]}
+    elif [[ $rest =~ ^([A-Za-z0-9_-]+)[[:space:]]*=[[:space:]]*(.*)$ ]]; then
+      key=${section:+$section.}${BASH_REMATCH[1]}
+      rest=${BASH_REMATCH[2]}
+      if [[ $rest == '"'* ]]; then
+        take_string || fail "line $lineno: unterminated string"
+        value_ends || fail "line $lineno: unexpected text after the value"
+        toml[$key]=$string
+      elif [[ $rest =~ ^(true|false)[[:space:]]*(#.*)?$ ]]; then
+        toml[$key]=${BASH_REMATCH[1]}
+      elif [[ $rest == "["* ]]; then
+        rest=${rest:1} items="" array=1
+        scan_array
+      else
+        fail "line $lineno: unsupported value for $key"
+      fi
+    else
+      fail "line $lineno: not a section or a key"
+    fi
+  done <"$preseed"
+
+  (( ! array )) || fail "the array $key never closes"
+}
+
+# Imager names an XKB layout; the console and owner setup take a kbd keymap.
+# systemd's own table maps between them: its first column is the keymap, the
+# second the layout, the fourth the variant ("-" for none).
+console_keymap() {
+  local layout=$1
+  [[ -f $kbd_model_map ]] || return 0
+  awk -v layout="$layout" '
+    /^#/ { next }
+    $2 == layout || index($2, layout ",") == 1 {
+      if ($4 == "-") { print $1; found = 1; exit }
+      if (first == "") first = $1
+    }
+    END { if (!found && first != "") print first }
+  ' "$kbd_model_map"
+}
+
+stage_answers() {
+  local pair keymap lines=()
+
+  for pair in hostname=system.hostname username=user.name timezone=locale.timezone; do
+    if [[ -n ${toml[${pair#*=}]:-} ]]; then
+      lines+=("${pair%%=*}=${toml[${pair#*=}]}")
+    fi
+  done
+  if [[ -n ${toml[user.password]:-} ]]; then
+    if [[ ${toml[user.password_encrypted]:-} == "true" ]]; then
+      lines+=("password_hash=${toml[user.password]}")
+    else
+      note "the account password is not a hash; owner setup asks for one"
+    fi
+  fi
+  if [[ -n ${toml[locale.keymap]:-} ]]; then
+    keymap=$(console_keymap "${toml[locale.keymap]}")
+    if [[ -n $keymap ]]; then
+      lines+=("keymap=$keymap")
+    else
+      note "no console keymap for keyboard layout ${toml[locale.keymap]}; owner setup asks for one"
+    fi
+  fi
+
+  if (( ${#lines[@]} )); then
+    install -d -m 0700 "$provisioning"
+    (umask 077 && printf '%s\n' "${lines[@]}" >"$answers")
+    note "staged ${#lines[@]} answers for owner setup"
+  fi
+}
+
+stage_ssh() {
+  [[ ${toml[ssh.enabled]:-} == "true" ]] || return 0
+
+  if [[ -n ${toml[ssh.authorized_keys]:-} ]]; then
+    install -d -m 0700 "$provisioning"
+    (umask 077 && printf '%s\n' "${toml[ssh.authorized_keys]}" >>"$provisioning/authorized_keys")
+  fi
+
+  if [[ ${toml[ssh.password_authentication]:-} == "false" ]]; then
+    install -d -m 0755 "${sshd_dropin%/*}"
+    cat >"$sshd_dropin" <<'CONF'
+# Written by omarchy-rpi-preseed: Raspberry Pi Imager was told to allow SSH
+# logins with a key only.
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+CONF
+  fi
+
+  ufw allow 22/tcp
+  systemctl enable sshd.service
+  systemctl start --no-block sshd.service
+  note "SSH enabled, port 22 open"
+}
+
+# NetworkManager's keyfile for the network, as nmcli would save it. A name
+# Imager could only give as hex goes in as the keyfile's list of bytes.
+stage_wlan() {
+  local ssid=${toml[wlan.ssid]:-} hex=${toml[wlan.ssid_hex]:-} psk=${toml[wlan.password]:-} keyfile args bytes=""
+
+  if [[ -n $hex ]]; then
+    [[ $hex =~ ^([0-9a-fA-F]{2})+$ ]] || fail "wlan.ssid_hex is not hex"
+    while [[ -n $hex ]]; do
+      bytes+="$((16#${hex:0:2}));"
+      hex=${hex:2}
+    done
+    ssid=placeholder
+  fi
+  [[ -n $ssid ]] || return 0
+
+  args=(type wifi con-name preconfigured ssid "$ssid")
+  if [[ ${toml[wlan.hidden]:-} == "true" ]]; then
+    args+=(802-11-wireless.hidden yes)
+  fi
+  if [[ -n $psk ]]; then
+    if [[ ${toml[wlan.password_encrypted]:-} == "true" && ! $psk =~ ^[0-9a-fA-F]{64}$ ]]; then
+      fail "wlan.password is marked encrypted but is not a 64-digit key"
+    fi
+    args+=(wifi-sec.key-mgmt wpa-psk wifi-sec.psk "$psk")
+  fi
+
+  keyfile=$(nmcli --offline connection add "${args[@]}")
+  if [[ -n $bytes ]]; then
+    keyfile=$(sed "/^\[wifi\]/,/^\[/ s/^ssid=.*/ssid=$bytes/" <<<"$keyfile")
+  fi
+
+  install -d -m 0700 "$connections"
+  (umask 077 && printf '%s\n' "$keyfile" >"$connections/preconfigured.nmconnection")
+  note "Wi-Fi network ${toml[wlan.ssid]:-(hex name)} saved"
+}
+
+# The country Imager asked for, in place of the one the timezone would give.
+stage_regdom() {
+  local country=${toml[wlan.country]:-}
+  [[ -n $country ]] || return 0
+  [[ $country =~ ^[A-Z]{2}$ ]] || fail "wlan.country $country is not a country code"
+
+  if [[ -f $regdom_file ]] && grep -q '^WIRELESS_REGDOM=' "$regdom_file"; then
+    sed -i "s/^WIRELESS_REGDOM=.*/WIRELESS_REGDOM=\"$country\"/" "$regdom_file"
+  else
+    install -d -m 0755 "${regdom_file%/*}"
+    echo "WIRELESS_REGDOM=\"$country\"" >>"$regdom_file"
+  fi
+  set-wireless-regdom || note "could not apply wireless country $country now; it applies on the next boot"
+  note "wireless country $country"
+}
+
+note_skipped() {
+  local key
+  for key in "${!toml[@]}"; do
+    case $key in
+      config_version | system.hostname | user.name | user.password | user.password_encrypted | \
+        ssh.* | wlan.ssid | wlan.ssid_hex | wlan.password | wlan.password_encrypted | wlan.hidden | wlan.country | \
+        locale.keymap | locale.timezone) ;;
+      *) note "skipping $key: Omarchy has no use for it" ;;
+    esac
+  done
+}
+
+[[ -f $preseed ]] || exit 0
+
+# Whatever happens next, the password hash and the Wi-Fi key don't stay on the
+# card's boot partition.
+trap 'rm -f "$preseed"; sync -f "${preseed%/*}" 2>/dev/null || true' EXIT
+
+read_preseed
+[[ ${toml[config_version]:-} == 1.* ]] || fail "config_version ${toml[config_version]:-(none)} is not one this reads"
+
+note_skipped
+stage_answers
+stage_ssh
+stage_wlan
+stage_regdom

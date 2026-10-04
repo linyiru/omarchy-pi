@@ -50,7 +50,7 @@ A second fresh card the same day, booting with the quiet console, took 38 second
 
 What to know:
 
-- SSH is installed but its port is closed; open it with `sudo ufw allow 22/tcp`.
+- SSH is installed but its port is closed; open it with `sudo ufw allow 22/tcp`, or turn SSH on in Raspberry Pi Imager's settings before writing the card.
 - The root partition stays at the image's size; it is not grown to fill the card.
 
 ## What the image is
@@ -59,6 +59,7 @@ What to know:
 - **Boot:** the way Raspberry Pi OS boots: the Pi's firmware reads `config.txt`, picks the board's device tree and overlays, and loads Raspberry Pi's kernel (Arch Linux ARM's `linux-rpi`, as `kernel8.img`) and the initramfs, with the kernel command line from `cmdline.txt`. Arch Linux ARM's root comes with the mainline `linux-aarch64` and U-Boot instead; the build replaces both. Only the root on the command line changes, to the btrfs root by UUID and its `@` subvolume.
 - **Kernel upgrades:** boot once as a trial, through the firmware's tryboot, instead of the snapshot rollback Limine gives an x86 install. Before `linux-rpi` upgrades, `omarchy-rpi-boot` copies the running kernel, initramfs, device trees and overlays to `/boot/fallback/`; after, `config.txt` boots that copy and `tryboot.txt` boots the new kernel on the next reboot only. The trial reboots on a panic, on a failed initramfs and on a hang (the hardware watchdog), and commits once it reaches the desktop; one that hasn't within 5 minutes reboots. Either way the following boot is the last good kernel, whose modules stay installed until a trial commits. An update that ends in a poweroff runs the trial on the reboot after it; a trial that failed waits for the next upgrade. Verified on a Pi 5 on 2026-10-04.
 - **System:** the Pi's default package set from `omarchy-pkg-defaults raspberrypi`, set up by `omarchy-apply-system --defer-provisioning --first-install` as the ISO does, with hardware setup deferred to the Pi's first boot (`/var/lib/omarchy/image/target` says `platform=raspberrypi`).
+- **Raspberry Pi Imager's settings:** the hostname, account, password, timezone, keyboard layout, Wi-Fi and SSH you set in Imager's OS customisation, which it writes to the card as `rpi-preseed.toml`, are read on the first boot by `omarchy-rpi-preseed`. Owner setup then asks only for what Imager has no field for (full name and email) and shows the rest on its confirmation screen, where any of it can be changed. Wi-Fi, its country and SSH (keys, password logins, the open port) are set up before NetworkManager and sshd start. The file holds the password hash and the Wi-Fi key, so it is removed once read. Imager's Raspberry Pi Connect and interface options are skipped. Tested against the file Imager 2.0.11 writes, on the build host (`test/omarchy-rpi-preseed-test.sh`); not yet on a card Imager wrote.
 - **First boot:** makes the machine's own pacman keyring, runs the deferred hardware setup, rebuilds the initramfs for the board, then asks for the owner on tty1. Owner setup unpacks the Node.js tarball the image carries, so none of it needs the network. The image ships no account: Arch Linux ARM's `alarm` user is removed and root is locked until owner setup.
 
 ## Layout
@@ -68,6 +69,8 @@ What to know:
 - `bin/disk` - creates, mounts and snapshots the disk image
 - `stages/` - run inside the image root, in order: repositories, Omarchy, boot, finalization
 - `packages/omarchy-rpi-boot` - a prototype of the boot package `omarchy-lifecycle-dispatch` expects on a Pi; unencrypted roots only
+- `packages/omarchy-rpi-preseed` - applies Raspberry Pi Imager's settings at first boot
+- `test/` - tests that run on the build host
 
 ## Emulation workarounds
 

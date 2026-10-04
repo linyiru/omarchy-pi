@@ -1,0 +1,17 @@
+# Hands the settings Raspberry Pi Imager wrote to the card to an image still
+# waiting for its owner: before owner setup asks for them, and before the
+# network and SSH start with them.
+[Unit]
+Description=Apply the settings Raspberry Pi Imager wrote to the card
+ConditionPathExists=/boot/rpi-preseed.toml
+ConditionPathExists=/var/lib/omarchy/provisioning/pending
+RequiresMountsFor=/boot /var/lib/omarchy
+Before=omarchy-provision-owner.service NetworkManager.service sshd.service display-manager.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/omarchy/rpi-preseed/omarchy-rpi-preseed
+
+[Install]
+WantedBy=multi-user.target
