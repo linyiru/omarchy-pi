@@ -1,0 +1,9 @@
+[Trigger]
+Type = Package
+Operation = Upgrade
+Target = linux-rpi
+
+[Action]
+Description = Keeping the last good Raspberry Pi kernel...
+When = PreTransaction
+Exec = /usr/lib/omarchy/rpi-boot/trial-keep

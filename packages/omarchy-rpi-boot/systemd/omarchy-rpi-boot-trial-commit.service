@@ -1,0 +1,12 @@
+[Unit]
+Description=Keep the Raspberry Pi kernel that passed its trial boot
+ConditionKernelCommandLine=omarchy.trial
+Requires=boot-complete.target
+After=boot-complete.target graphical.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/omarchy/rpi-boot/trial-commit
+
+[Install]
+WantedBy=graphical.target

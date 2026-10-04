@@ -1,0 +1,37 @@
+#!/bin/bash
+
+# After linux-rpi upgrades and its initramfs is built: the next reboot boots the
+# new kernel once, from tryboot.txt, and config.txt boots the last good kernel
+# from fallback/ until that trial commits.
+source /usr/lib/omarchy/rpi-boot/common.sh
+
+boot_mounted || fail "$boot_dir is not mounted"
+[[ -f $fallback_dir/${kernel##*/} ]] || fail "$fallback_dir has no last good kernel, so the new kernel boots without a trial"
+
+release=$(kernel_release)
+last_good=$(image_release "$fallback_dir/${kernel##*/}")
+
+if [[ $release == "$last_good" ]]; then
+  echo "Kernel $release is the last good kernel; no trial boot"
+  end_trial
+else
+  [[ -s $initramfs ]] || fail "$initramfs is missing"
+  [[ -d /usr/lib/modules/$release ]] || fail "kernel $release has no modules installed"
+  [[ -d /usr/lib/modules/$last_good ]] || fail "the last good kernel $last_good has no modules installed"
+
+  read -r -a args <"$cmdline_txt" || true
+  echo "${args[*]} ${trial_args[*]}" | replace_boot_file "$trial_cmdline_txt"
+  { config_without_trial; printf '[all]\ncmdline=%s\n' "${trial_cmdline_txt##*/}"; } | replace_boot_file "$tryboot_txt"
+  if ! grep -qxF "$trial_mark" "$config_txt"; then
+    { cat "$config_txt"; printf '%s\n[all]\nos_prefix=%s/\n' "$trial_mark" "${fallback_dir##*/}"; } | replace_boot_file "$config_txt"
+  fi
+  rm -f "$trial_attempted"
+  sync -f "$boot_dir"
+
+  request_trial_reboot
+  # Installed with this upgrade, the unit hasn't run this boot yet.
+  if [[ -d /run/systemd/system ]]; then
+    systemctl start --no-block omarchy-rpi-boot-trial.service
+  fi
+  echo "Kernel $release boots as a trial on the next reboot; kernel $last_good stays as the fallback"
+fi

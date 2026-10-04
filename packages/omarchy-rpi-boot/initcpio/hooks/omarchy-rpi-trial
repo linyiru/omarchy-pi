@@ -1,0 +1,28 @@
+#!/usr/bin/ash
+# On a trial boot (tryboot.txt), starts the hardware watchdog for systemd to
+# take over and reboots where the initramfs would stop at a recovery shell, so
+# a trial that hangs or can't mount its root falls back to config.txt.
+
+omarchy_rpi_trial() {
+  [ "$(hexdump -ve '1/1 "%02x"' /sys/firmware/devicetree/base/chosen/bootloader/tryboot 2>/dev/null)" = 00000001 ]
+}
+
+run_earlyhook() {
+  # Opening the watchdog starts it, and bcm2835_wdt.nowayout keeps it running.
+  if omarchy_rpi_trial; then
+    exec 3>/dev/watchdog
+  fi
+}
+
+run_cleanuphook() {
+  # Free the running watchdog before switch_root, so systemd opens it at once.
+  exec 3>&-
+}
+
+run_emergencyhook() {
+  if omarchy_rpi_trial; then
+    err "The trial boot failed; rebooting into the last good kernel"
+    sleep 3
+    reboot -f
+  fi
+}

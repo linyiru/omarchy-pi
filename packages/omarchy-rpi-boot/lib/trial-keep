@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# Before linux-rpi upgrades: keeps the kernel /boot boots now, with its
+# initramfs, device trees, overlays and command line, in fallback/ as the last
+# good boot. kernel-modules-hook keeps the running kernel's modules. A pending
+# trial already falls back to fallback/, so that one stays.
+source /usr/lib/omarchy/rpi-boot/common.sh
+
+boot_mounted || fail "$boot_dir is not mounted"
+
+if trial_pending; then
+  echo "A trial boot is pending; keeping the last good kernel in $fallback_dir"
+else
+  verify_boot_chain
+  rm -rf "$fallback_dir.new"
+  mkdir "$fallback_dir.new"
+  cp -r "$kernel" "$initramfs" "$cmdline_txt" "$boot_dir"/*.dtb "$boot_dir/overlays" "$fallback_dir.new/"
+  sync -f "$boot_dir"
+  rm -rf "$fallback_dir"
+  mv "$fallback_dir.new" "$fallback_dir"
+  sync -f "$boot_dir"
+fi

@@ -1,0 +1,7 @@
+[Unit]
+Description=Reboot a Raspberry Pi trial boot that hasn't committed into the last good kernel
+ConditionKernelCommandLine=omarchy.trial
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/omarchy/rpi-boot/trial-deadline

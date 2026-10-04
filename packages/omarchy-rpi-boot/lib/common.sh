@@ -21,6 +21,23 @@ root_flags=(rootfstype=btrfs rootflags=subvol=@ rw)
 quiet_args=(quiet loglevel=0 systemd.show_status=false rd.udev.log_level=0 vt.global_cursor_default=0)
 provisioning_dir=/var/lib/omarchy/provisioning
 
+# A linux-rpi upgrade boots its kernel once as a trial. The firmware reads
+# tryboot.txt instead of config.txt for one boot only, when the reboot asks
+# for it, and config.txt boots the last good kernel from fallback/ until the
+# trial commits, so a trial that fails falls back on its next reboot. The
+# trial's command line adds a reboot on panic, the hardware watchdog and a
+# marker the systemd units check.
+fallback_dir=$boot_dir/fallback
+tryboot_txt=$boot_dir/tryboot.txt
+trial_cmdline_txt=$boot_dir/tryboot-cmdline.txt
+trial_args=(omarchy.trial panic=5 bcm2835_wdt.nowayout=1 systemd.watchdog_sec=15)
+trial_mark="# omarchy-rpi-boot: a trial boot is pending, so boot the last good kernel"
+# Left by the shutdown that reboots into the trial, so the boot after it knows
+# the trial ran and failed rather than never ran.
+trial_attempted=$fallback_dir/attempted
+# systemd passes this to the next reboot, whichever asks for it.
+reboot_param=/run/systemd/reboot-param
+
 fail() {
   echo "Error: $*" >&2
   exit 1
@@ -54,8 +71,8 @@ root_args() {
 }
 
 cmdline_points_at_root() {
-  local args want
-  read -r args <"$cmdline_txt" || [[ -n $args ]] || return 1
+  local file=${1:-$cmdline_txt} args want
+  read -r args <"$file" || [[ -n $args ]] || return 1
   for want in $(root_args); do
     [[ " $args " == *" $want "* ]] || return 1
   done
@@ -90,10 +107,17 @@ config_loads_initramfs() {
   grep -qx "initramfs ${initramfs##*/} followkernel" "$config_txt"
 }
 
+# The release a kernel image was built as. A trial keeps a second kernel's
+# modules installed, so the release comes from the image, not the modules.
+image_release() {
+  LC_ALL=C grep -aom1 'Linux version [^ ]*' "$1" | cut -d' ' -f3
+}
+
 kernel_release() {
-  local modules=(/usr/lib/modules/*-rpi)
-  (( ${#modules[@]} == 1 )) && [[ -d ${modules[0]} ]] || fail "expected one installed linux-rpi kernel"
-  basename "${modules[0]}"
+  local release
+  release=$(image_release "$kernel")
+  [[ -n $release ]] || fail "$kernel names no kernel release"
+  echo "$release"
 }
 
 # What the firmware loads must be there, and the kernel must be the one whose
@@ -108,10 +132,69 @@ verify_boot_chain() {
   cmdline_points_at_root || fail "$cmdline_txt does not root on the @ subvolume"
 
   release=$(kernel_release)
-  if ! LC_ALL=C grep -aq "Linux version $release " "$kernel"; then
-    fail "$kernel is not kernel $release"
-  fi
+  [[ -d /usr/lib/modules/$release ]] || fail "$kernel is kernel $release, which has no modules installed"
   if [[ -n $root ]]; then
     [[ -d $root/usr/lib/modules/$release ]] || fail "$root has no modules for kernel $release"
   fi
+}
+
+# The firmware booted tryboot.txt.
+trial_booted() {
+  [[ $(od -An -tx1 /proc/device-tree/chosen/bootloader/tryboot 2>/dev/null | tr -d ' \n') == "00000001" ]]
+}
+
+trial_pending() {
+  [[ -e $tryboot_txt ]]
+}
+
+# The firmware treats a tryboot reboot without tryboot.txt as an unbootable SD
+# card and retries it until power is cut, so the reboot asks for a trial only
+# while tryboot.txt is in place.
+request_trial_reboot() {
+  trial_pending || fail "$tryboot_txt is missing, so the reboot can't be a trial"
+  printf '0 tryboot' >"$reboot_param"
+}
+
+cancel_trial_reboot() {
+  if [[ -e $reboot_param ]] && grep -q tryboot "$reboot_param"; then
+    rm -f "$reboot_param"
+  fi
+}
+
+# config.txt as linux-rpi and the owner left it, without the trial's lines.
+config_without_trial() {
+  awk -v mark="$trial_mark" '$0 == mark { exit } { print }' "$config_txt"
+}
+
+# FAT has no journal: write a boot file whole, then move it into place.
+replace_boot_file() {
+  cat >"$1.new"
+  sync "$1.new"
+  mv -f "$1.new" "$1"
+}
+
+# config.txt boots the kernel in /boot again, and the trial's files go.
+end_trial() {
+  cancel_trial_reboot
+  if grep -qxF "$trial_mark" "$config_txt"; then
+    config_without_trial | replace_boot_file "$config_txt"
+  fi
+  rm -f "$tryboot_txt" "$trial_cmdline_txt"
+  rm -rf "$fallback_dir"
+  sync -f "$boot_dir"
+}
+
+# The trial and its fallback must both boot this system.
+verify_trial() {
+  local last_good
+
+  grep -qxF "$trial_mark" "$config_txt" || fail "$config_txt does not boot the last good kernel"
+  grep -qx "cmdline=${trial_cmdline_txt##*/}" "$tryboot_txt" || fail "$tryboot_txt does not boot the trial's command line"
+  cmdline_points_at_root "$trial_cmdline_txt" || fail "$trial_cmdline_txt does not root on the @ subvolume"
+
+  [[ -f $fallback_dir/${kernel##*/} ]] || fail "$fallback_dir has no kernel"
+  [[ -s $fallback_dir/${initramfs##*/} ]] || fail "$fallback_dir has no initramfs"
+  cmdline_points_at_root "$fallback_dir/${cmdline_txt##*/}" || fail "$fallback_dir/${cmdline_txt##*/} does not root on the @ subvolume"
+  last_good=$(image_release "$fallback_dir/${kernel##*/}")
+  [[ -n $last_good && -d /usr/lib/modules/$last_good ]] || fail "the last good kernel ${last_good:-in $fallback_dir} has no modules installed"
 }

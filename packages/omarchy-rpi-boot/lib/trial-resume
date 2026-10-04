@@ -1,0 +1,15 @@
+#!/bin/bash
+
+# On a boot of the last good kernel with a trial pending: either the trial never
+# ran, because the update ended in a poweroff, and the next reboot runs it, or it
+# ran and failed, and the pending trial waits for the next linux-rpi upgrade.
+source /usr/lib/omarchy/rpi-boot/common.sh
+
+if trial_pending && ! trial_booted; then
+  if [[ -e $trial_attempted ]]; then
+    echo "Kernel $(kernel_release) failed its trial boot; kernel $(uname -r) stays until the next linux-rpi upgrade" >&2
+  else
+    request_trial_reboot
+    echo "Kernel $(kernel_release) boots as a trial on the next reboot"
+  fi
+fi

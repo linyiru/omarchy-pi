@@ -1,0 +1,10 @@
+#!/bin/bash
+
+# A trial boot that hasn't committed by now gives up. The firmware has already
+# cleared the trial, so the reboot boots config.txt and the last good kernel.
+source /usr/lib/omarchy/rpi-boot/common.sh
+
+if trial_booted && trial_pending; then
+  echo "Kernel $(kernel_release) did not finish its trial boot; rebooting into the last good kernel" >&2
+  systemctl reboot
+fi

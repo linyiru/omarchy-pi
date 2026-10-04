@@ -1,0 +1,9 @@
+[Trigger]
+Type = Package
+Operation = Upgrade
+Target = linux-rpi
+
+[Action]
+Description = Arming the new Raspberry Pi kernel's trial boot...
+When = PostTransaction
+Exec = /usr/lib/omarchy/rpi-boot/trial-arm

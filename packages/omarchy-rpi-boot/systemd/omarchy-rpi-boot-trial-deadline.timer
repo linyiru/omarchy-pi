@@ -1,0 +1,10 @@
+[Unit]
+Description=Give up on a Raspberry Pi trial boot that hasn't committed
+ConditionKernelCommandLine=omarchy.trial
+
+[Timer]
+OnBootSec=5min
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

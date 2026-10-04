@@ -1,0 +1,11 @@
+#!/bin/bash
+
+# On a trial boot that reached the desktop: config.txt boots the new kernel from
+# now on, and the last good one goes. linux-modules-cleanup drops its modules on
+# the next boot.
+source /usr/lib/omarchy/rpi-boot/common.sh
+
+if trial_booted && trial_pending; then
+  end_trial
+  echo "Kernel $(kernel_release) passed its trial boot"
+fi

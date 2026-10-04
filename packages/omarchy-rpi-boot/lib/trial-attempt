@@ -1,0 +1,16 @@
+#!/bin/bash
+
+# At shutdown: a reboot that asks for a trial marks it attempted, so a trial that
+# fails isn't retried on every reboot. A trial request without tryboot.txt would
+# leave the firmware retrying the SD card until power is cut, so it's dropped.
+source /usr/lib/omarchy/rpi-boot/common.sh
+
+if [[ -e $reboot_param ]] && grep -q tryboot "$reboot_param"; then
+  if ! trial_pending; then
+    echo "$tryboot_txt is missing; rebooting without a trial" >&2
+    cancel_trial_reboot
+  elif systemctl list-jobs --no-legend reboot.target | grep -q reboot.target; then
+    touch "$trial_attempted"
+    sync -f "$boot_dir"
+  fi
+fi

@@ -1,6 +1,10 @@
 #!/bin/bash
 
-# Read-only: the updated boot chain boots this system.
+# Read-only: the updated boot chain boots this system, and so does the last
+# good kernel a pending trial falls back to.
 source /usr/lib/omarchy/rpi-boot/common.sh
 
 verify_boot_chain /
+if trial_pending; then
+  verify_trial
+fi

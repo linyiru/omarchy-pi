@@ -1,0 +1,12 @@
+[Unit]
+Description=Carry a pending Raspberry Pi trial boot across shutdowns
+RequiresMountsFor=/boot
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/lib/omarchy/rpi-boot/trial-resume
+ExecStop=/usr/lib/omarchy/rpi-boot/trial-attempt
+
+[Install]
+WantedBy=multi-user.target
