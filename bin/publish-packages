@@ -20,7 +20,7 @@ if (( $# != 1 )); then
 fi
 
 dir=$(realpath -- "$1")
-repo=${OMARCHY_PI_REPO:-linyiru/omarchy-pi}
+repo=${OMARCHY_PI_GITHUB_REPO:-linyiru/omarchy-pi}
 tag=packages-aarch64
 db=omarchy-pi
 work=$(mktemp -d)
