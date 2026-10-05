@@ -5,8 +5,9 @@
 # `rpi-imager --repo <manifest>`). The manifest's init_format, rpi-preseed,
 # tells Imager to offer its OS customisation and write the settings as
 # rpi-preseed.toml, which the image's omarchy-rpi-preseed applies at first
-# boot. Only the Raspberry Pi 5 is listed: it is the board the image is tested
-# on.
+# boot. Imager offers only the devices a manifest lists, so it lists one, the
+# Raspberry Pi 5 (as Raspberry Pi's own manifest describes it): the board the
+# image is tested on.
 #
 # Usage: bin/release-image <image> <out-dir> [url-base]
 #
@@ -54,7 +55,16 @@ jq -n \
   --arg url "$url" --arg icon "$icon_url" --arg date "$date" \
   --argjson extract_size "$extract_size" --arg extract_sha256 "$extract_sha256" \
   --argjson download_size "$download_size" --arg download_sha256 "$download_sha256" \
-  '{os_list: [{
+  '{imager: {devices: [{
+    name: "Raspberry Pi 5",
+    tags: ["pi5-64bit"],
+    icon: "https://downloads.raspberrypi.com/imager/icons/RPi_5.png",
+    description: "Raspberry Pi 5, 500 / 500+, and Compute Module 5",
+    matching_type: "exclusive",
+    capabilities: [],
+    default: true
+  }]},
+  os_list: [{
     name: "Omarchy Pi (64-bit)",
     description: "Omarchy, the Hyprland desktop on Arch Linux ARM, for the Raspberry Pi 5. A prototype.",
     url: $url,
