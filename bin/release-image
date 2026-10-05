@@ -30,7 +30,7 @@ date=$(date -u +%F)
 
 mkdir -p "$out"
 compressed=$out/$name.img.xz
-icon=$out/$name.svg
+icon=$out/$name.png
 manifest=$out/$name.rpi-imager-manifest
 
 # Imager checks what it writes against extract_sha256, and the download
@@ -41,7 +41,7 @@ xz -T0 -6 -c "$image" >"$compressed"
 download_size=$(stat -c %s "$compressed")
 download_sha256=$(sha256sum "$compressed" | cut -d' ' -f1)
 (cd "$out" && sha256sum "${compressed##*/}" >"${compressed##*/}.sha256")
-cp "$here/../docs/icon.svg" "$icon"
+cp "$here/../docs/icon.png" "$icon"
 
 if [[ -n $url_base ]]; then
   url=${url_base%/}/${compressed##*/}
