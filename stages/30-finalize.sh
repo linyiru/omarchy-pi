@@ -53,6 +53,13 @@ if [[ -e /etc/resolv.conf.image || -L /etc/resolv.conf.image ]]; then
   mv -f /etc/resolv.conf.image /etc/resolv.conf
 fi
 
+# A Pi has no clock without its RTC battery: until the network sets it, the
+# first boot runs at systemd's build date, earlier than a signing key made
+# since. gpg then refuses that key as made in the future, so the first boot's
+# pacman keyring fails (seen 2026-10-05, booting at systemd 262's 2026-09-25).
+# systemd starts the clock no earlier than this file's time, the build's.
+touch /usr/lib/clock-epoch
+
 # The root has no /etc/.updated or /var/.updated, so the first boot would treat
 # /usr as freshly updated and redo, before anything else starts, what the build
 # can do now (ldconfig alone took 8 s in the emulated Pi). Run what each
