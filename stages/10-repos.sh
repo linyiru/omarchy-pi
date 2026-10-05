@@ -20,7 +20,12 @@ ln -sfn /dev/null /etc/pacman.d/hooks/90-mkinitcpio-install.hook
 
 pacman-key --init
 pacman-key --populate archlinuxarm
-pacman-key --recv-keys "$omarchy_key" --keyserver hkps://keys.openpgp.org
+# Omarchy publishes its key on keys.openpgp.org, which reset every connection
+# to it from home on 2026-10-04; the key is fetched by its full fingerprint, so another
+# keyserver can stand in.
+if ! pacman-key --recv-keys "$omarchy_key" --keyserver hkps://keys.openpgp.org; then
+  pacman-key --recv-keys "$omarchy_key" --keyserver hkps://keyserver.ubuntu.com
+fi
 pacman-key --lsign-key "$omarchy_key"
 
 if ! grep -qx '\[omarchy\]' /etc/pacman.conf; then
