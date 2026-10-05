@@ -6,6 +6,16 @@
 # runs on the host with CARCH=aarch64 and no emulation.
 #
 # Usage: bin/build-packages <omarchy-checkout> <omarchy-pkgs-checkout> <out-dir>
+#
+# These are the packages of the [omarchy-pi] repository, which an image lists
+# before Omarchy's own: pacman takes a package from the first repository that
+# has it, whatever the version, so Omarchy's aarch64 builds, which have no
+# Raspberry Pi support, never replace these. The Omarchy packages are versioned
+# as Omarchy's are, from the checkout's commit count and commit.
+#
+# With OMARCHY_PI_SIGNING_KEY (a key in $GNUPGHOME), every package is signed,
+# for bin/publish-packages, and the checkout must have no uncommitted changes,
+# so that the version names what was built.
 
 set -euo pipefail
 
@@ -17,32 +27,62 @@ fi
 src=$(realpath -- "$1")
 pkgs=$(realpath -- "$2")
 out=$(realpath -m -- "$3")
+here=$(dirname -- "$(realpath -- "$0")")
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
+
+# Where an image finds [omarchy-pi]; pacman expands $arch.
+server=${OMARCHY_PI_REPO_SERVER:-'https://github.com/linyiru/omarchy-pi/releases/download/packages-$arch'}
+
+sign=()
+if [[ -n ${OMARCHY_PI_SIGNING_KEY:-} ]]; then
+  sign=(--sign --key "$OMARCHY_PI_SIGNING_KEY")
+  if [[ -n $(git -C "$src" status --porcelain) ]]; then
+    echo "Error: $src has uncommitted changes; a signed build must name its commit" >&2
+    exit 1
+  fi
+fi
 
 mkdir -p "$out"
 sed -e 's/^CARCH=.*/CARCH="aarch64"/' -e 's/^CHOST=.*/CHOST="aarch64-unknown-linux-gnu"/' /etc/makepkg.conf >"$work/makepkg.conf"
 
-# A local build outranks the repository's build of the same source.
-for package in omarchy-settings-dev omarchy-dev; do
-  cp -a "$pkgs/pkgbuilds/$package" "$work/$package"
-  sed -i 's/^pkgrel=.*/pkgrel=99/' "$work/$package/PKGBUILD"
-  if ! (cd "$work/$package" && OMARCHY_SRC=$src PKGDEST=$out makepkg --config "$work/makepkg.conf" -f --nodeps --noconfirm) >"$work/$package.log" 2>&1; then
+# Omarchy rewrites /etc/pacman.conf from its template whenever it refreshes
+# pacman's configuration, so [omarchy-pi] goes into the template. The aarch64
+# templates are shared by every ARM platform but Apple Silicon; only a
+# Raspberry Pi image carries this build of them.
+cp -a "$src/." "$work/omarchy"
+template=$work/omarchy/default/pacman/aarch64/pacman-edge.conf
+grep -qx '\[omarchy\]' "$template" || { echo "Error: no [omarchy] in $template" >&2; exit 1; }
+awk -v server="$server" '
+  $0 == "[omarchy]" { print "[omarchy-pi]"; print "Server = " server; print "" }
+  { print }
+' "$template" >"$work/pacman-edge.conf"
+mv "$work/pacman-edge.conf" "$template"
+
+# Built with makepkg's GNUPGHOME, so a signing key outside ~/.gnupg is found.
+build() {
+  local dir=$1 package
+  package=$(basename -- "$dir")
+  if ! (cd "$dir" && OMARCHY_SRC=$work/omarchy PKGDEST=$out makepkg --config "$work/makepkg.conf" -f --nodeps --noconfirm "${sign[@]}") >"$work/$package.log" 2>&1; then
     tail -20 "$work/$package.log" >&2
     echo "Error: building $package failed" >&2
     exit 1
   fi
+}
+
+base=$(sed -n 's/^pkgver=//p' "$pkgs/pkgbuilds/omarchy-dev/PKGBUILD")
+version=${base%%.r*}.r$(git -C "$src" rev-list --count HEAD).g$(git -C "$src" rev-parse --short=7 HEAD)
+for package in omarchy-settings-dev omarchy-dev; do
+  cp -a "$pkgs/pkgbuilds/$package" "$work/$package"
+  sed -i -e "s/^pkgver=.*/pkgver=$version/" -e 's/^pkgrel=.*/pkgrel=1/' "$work/$package/PKGBUILD"
+  build "$work/$package"
 done
 
 # This repository's own packages build from their directories here.
-for dir in "$(dirname -- "$(realpath -- "$0")")"/../packages/*/; do
+for dir in "$here"/../packages/*/; do
   package=$(basename -- "$dir")
   cp -a "$dir" "$work/$package"
-  if ! (cd "$work/$package" && PKGDEST=$out makepkg --config "$work/makepkg.conf" -f --nodeps --noconfirm) >"$work/$package.log" 2>&1; then
-    tail -20 "$work/$package.log" >&2
-    echo "Error: building $package failed" >&2
-    exit 1
-  fi
+  build "$work/$package"
 done
 
 ls -1 "$out"
