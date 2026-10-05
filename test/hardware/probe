@@ -27,3 +27,7 @@ echo "preseed-file=$(if [[ -e /boot/rpi-preseed.toml ]]; then echo present; else
 echo "provisioning=$(ls /var/lib/omarchy/provisioning | tr '\n' ' ' | sed 's/ $//')"
 failed=$(systemctl --failed --no-legend --plain | awk '{print $1}' | tr '\n' ' ' | sed 's/ $//')
 echo "failed-units=${failed:-none}"
+root=$(basename -- "$(realpath -- "$(findmnt -no SOURCE / | sed 's/\[.*//')")")
+disk=$(basename -- "$(realpath -- "/sys/class/block/$root/..")")
+slack=$(( $(<"/sys/class/block/$disk/size") - $(<"/sys/class/block/$root/start") - $(<"/sys/class/block/$root/size") ))
+echo "root.fills-disk=$(if (( slack < 2048 )); then echo yes; else echo no; fi)"

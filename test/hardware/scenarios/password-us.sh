@@ -48,4 +48,5 @@ expect=(
   "preseed-file=removed"
   "provisioning=packages"
   "failed-units=none"
+  "root.fills-disk=yes"
 )
