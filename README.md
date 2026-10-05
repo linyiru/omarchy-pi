@@ -65,6 +65,7 @@ What to know:
 ## Layout
 
 - `bin/build-image` - the whole build
+- `bin/release-image` - compresses an image and writes the manifest Raspberry Pi Imager opens it from, with its OS customisation offered
 - `bin/build-packages` - builds the Omarchy packages and `packages/` for aarch64 on the host
 - `bin/disk` - creates, mounts and snapshots the disk image
 - `stages/` - run inside the image root, in order: repositories, Omarchy, boot, finalization

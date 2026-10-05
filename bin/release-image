@@ -1,0 +1,75 @@
+#!/bin/bash
+
+# Packs a built image the way Raspberry Pi Imager takes an OS: compressed with
+# xz, and described by a manifest Imager opens (double-click it, or
+# `rpi-imager --repo <manifest>`). The manifest's init_format, rpi-preseed,
+# tells Imager to offer its OS customisation and write the settings as
+# rpi-preseed.toml, which the image's omarchy-rpi-preseed applies at first
+# boot. Only the Raspberry Pi 5 is listed: it is the board the image is tested
+# on.
+#
+# Usage: bin/release-image <image> <out-dir> [url-base]
+#
+# Without url-base the manifest points at the files in out-dir, for a local
+# Imager; with it, at url-base/<name>, where they will be published.
+
+set -euo pipefail
+
+if (( $# < 2 || $# > 3 )); then
+  echo "Usage: $0 <image> <out-dir> [url-base]" >&2
+  exit 2
+fi
+
+image=$(realpath -- "$1")
+out=$(realpath -m -- "$2")
+url_base=${3:-}
+here=$(dirname -- "$(realpath -- "$0")")
+name=$(basename -- "$image" .img)
+date=$(date -u +%F)
+
+mkdir -p "$out"
+compressed=$out/$name.img.xz
+icon=$out/$name.svg
+manifest=$out/$name.rpi-imager-manifest
+
+# Imager checks what it writes against extract_sha256, and the download
+# against image_download_sha256.
+extract_size=$(stat -c %s "$image")
+extract_sha256=$(sha256sum "$image" | cut -d' ' -f1)
+xz -T0 -6 -c "$image" >"$compressed"
+download_size=$(stat -c %s "$compressed")
+download_sha256=$(sha256sum "$compressed" | cut -d' ' -f1)
+(cd "$out" && sha256sum "${compressed##*/}" >"${compressed##*/}.sha256")
+cp "$here/../docs/icon.svg" "$icon"
+
+if [[ -n $url_base ]]; then
+  url=${url_base%/}/${compressed##*/}
+  icon_url=${url_base%/}/${icon##*/}
+else
+  url=file://$compressed
+  icon_url=file://$icon
+fi
+
+jq -n \
+  --arg url "$url" --arg icon "$icon_url" --arg date "$date" \
+  --argjson extract_size "$extract_size" --arg extract_sha256 "$extract_sha256" \
+  --argjson download_size "$download_size" --arg download_sha256 "$download_sha256" \
+  '{os_list: [{
+    name: "Omarchy Pi (64-bit)",
+    description: "Omarchy, the Hyprland desktop on Arch Linux ARM, for the Raspberry Pi 5. A prototype.",
+    url: $url,
+    icon: $icon,
+    website: "https://github.com/linyiru/omarchy-pi",
+    release_date: $date,
+    extract_size: $extract_size,
+    extract_sha256: $extract_sha256,
+    image_download_size: $download_size,
+    image_download_sha256: $download_sha256,
+    devices: ["pi5-64bit"],
+    init_format: "rpi-preseed",
+    architecture: "armv8",
+    capabilities: []
+  }]}' >"$manifest"
+
+echo "Wrote $compressed"
+echo "Wrote $manifest"
