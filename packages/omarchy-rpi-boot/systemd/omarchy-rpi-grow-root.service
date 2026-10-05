@@ -1,0 +1,13 @@
+[Unit]
+Description=Grow the root partition to the end of the card
+# Before first-boot setup and anything that writes much: an update wants
+# 10 GiB free, more than an image has.
+After=systemd-remount-fs.service
+Before=omarchy-provision-hardware.service omarchy-provision-owner.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/omarchy/rpi-boot/grow-root
+
+[Install]
+WantedBy=multi-user.target

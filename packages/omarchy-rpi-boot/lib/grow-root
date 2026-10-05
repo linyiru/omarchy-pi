@@ -1,0 +1,48 @@
+#!/bin/bash
+
+# Grows the root partition, and the btrfs on it, to the end of the card, the
+# way cloud-utils' growpart does on a mounted root: the partition's end moves
+# out with sfdisk, partx tells the kernel, btrfs grows online. An image is
+# written at its own size, whatever the card's; this runs on every boot and
+# does nothing once the partition ends within a MiB of the disk's end, or when
+# a partition follows it.
+#
+# Usage: grow-root [mount-point]   (default /)
+
+set -euo pipefail
+
+mount_point=${1:-/}
+
+# btrfs reports its source with the subvolume, /dev/mmcblk0p2[/@].
+source=$(findmnt -no SOURCE --target "$mount_point")
+source=${source%%[*}
+partition=$(basename -- "$(realpath -- "$source")")
+sys=/sys/class/block/$partition
+
+if [[ ! -e $sys/partition ]]; then
+  echo "$source is not a partition; nothing to grow"
+  exit 0
+fi
+
+disk=/dev/$(basename -- "$(realpath -- "$sys/..")")
+number=$(<"$sys/partition")
+start=$(<"$sys/start")
+end=$(( start + $(<"$sys/size") ))
+disk_end=$(<"/sys/class/block/${disk#/dev/}/size")
+
+# sysfs counts 512-byte sectors.
+for other in "/sys/class/block/${disk#/dev/}"/*/start; do
+  if (( $(<"$other") > start )); then
+    echo "A partition follows $source; not growing it"
+    exit 0
+  fi
+done
+
+if (( disk_end - end < 2048 )); then
+  exit 0
+fi
+
+echo "Growing $source from $(( (end - start) / 2048 )) MiB to the end of $disk"
+echo ', +' | sfdisk --quiet --no-reread --no-tell-kernel -N "$number" "$disk"
+partx -u -n "$number" "$disk"
+btrfs filesystem resize max "$mount_point"

@@ -2,13 +2,13 @@
 # (docs/lifecycle-dispatch.md): the firmware boot chain of an unencrypted
 # Omarchy root. Published in the [omarchy-pi] repository.
 pkgname=omarchy-rpi-boot
-pkgver=0.3.1
+pkgver=0.4.0
 pkgrel=1
 pkgdesc="Omarchy boot operations for the Raspberry Pi (prototype)"
 arch=('aarch64')
 url="https://github.com/linyiru/omarchy-pi"
 license=('MIT')
-depends=('linux-rpi' 'mkinitcpio' 'kernel-modules-hook' 'util-linux')
+depends=('linux-rpi' 'mkinitcpio' 'kernel-modules-hook' 'util-linux' 'btrfs-progs')
 
 package() {
   local lib=$startdir/lib file unit
@@ -27,7 +27,7 @@ package() {
   install -Dm0644 "$startdir/systemd/linux-modules-cleanup.service.d/omarchy-rpi-trial.conf" \
     "$pkgdir/usr/lib/systemd/system/linux-modules-cleanup.service.d/omarchy-rpi-trial.conf"
   for unit in multi-user.target.wants/omarchy-rpi-boot-trial.service graphical.target.wants/omarchy-rpi-boot-trial-commit.service \
-    timers.target.wants/omarchy-rpi-boot-trial-deadline.timer; do
+    timers.target.wants/omarchy-rpi-boot-trial-deadline.timer multi-user.target.wants/omarchy-rpi-grow-root.service; do
     install -dm0755 "$pkgdir/usr/lib/systemd/system/${unit%/*}"
     ln -s "../${unit##*/}" "$pkgdir/usr/lib/systemd/system/$unit"
   done

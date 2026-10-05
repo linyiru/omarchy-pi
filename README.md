@@ -53,7 +53,7 @@ A second fresh card the same day, booting with the quiet console, took 38 second
 What to know:
 
 - SSH is installed but its port is closed; open it with `sudo ufw allow 22/tcp`, or turn SSH on in Raspberry Pi Imager's settings before writing the card.
-- The root partition stays at the image's size; it is not grown to fill the card.
+- The first boot grows the root partition and its btrfs to fill the card, before owner setup (`omarchy-rpi-grow-root.service`), and leaves it alone if another partition follows it.
 
 ## What the image is
 
