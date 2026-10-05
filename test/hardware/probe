@@ -1,0 +1,29 @@
+# Runs as root on the Pi, under sudo from the account owner setup made, and
+# prints what preseed-round checks as key=value lines. Sourced by bash -c, so
+# no shebang.
+
+owner=$SUDO_USER
+as_owner() {
+  runuser -u "$owner" -- env XDG_RUNTIME_DIR="/run/user/$(id -u "$owner")" "$@"
+}
+
+echo "hostname=$(hostname)"
+echo "user=$owner"
+echo "user.wheel=$(if id -nG "$owner" | grep -qw wheel; then echo yes; else echo no; fi)"
+echo "user.full-name=$(getent passwd "$owner" | cut -d: -f5)"
+echo "git.name=$(as_owner git config --global user.name)"
+echo "git.email=$(as_owner git config --global user.email)"
+echo "timezone=$(timedatectl show -p Timezone --value)"
+echo "keymap.console=$(sed -n 's/^KEYMAP=//p' /etc/vconsole.conf)"
+signature=$(ls "/run/user/$(id -u "$owner")/hypr" 2>/dev/null | head -n 1)
+echo "keymap.desktop=$(as_owner env HYPRLAND_INSTANCE_SIGNATURE="$signature" hyprctl devices 2>/dev/null | sed -n 's/^[[:space:]]*active keymap: //p' | head -n 1)"
+echo "ssh.password-authentication=$(sshd -T | awk 'tolower($1) == "passwordauthentication" { print $2 }')"
+echo "ssh.port=$(if ufw status | grep -qE '^22/tcp +ALLOW'; then echo open; else echo closed; fi)"
+keyfile=/etc/NetworkManager/system-connections/preconfigured.nmconnection
+echo "wifi.ssid=$(sed -n 's/^ssid=//p' "$keyfile" 2>/dev/null)"
+echo "wifi.key-mgmt=$(sed -n 's/^key-mgmt=//p' "$keyfile" 2>/dev/null)"
+echo "wifi.country=$(sed -n 's/^WIRELESS_REGDOM="\(.*\)"/\1/p' /etc/conf.d/wireless-regdom)"
+echo "preseed-file=$(if [[ -e /boot/rpi-preseed.toml ]]; then echo present; else echo removed; fi)"
+echo "provisioning=$(ls /var/lib/omarchy/provisioning | tr '\n' ' ' | sed 's/ $//')"
+failed=$(systemctl --failed --no-legend --plain | awk '{print $1}' | tr '\n' ' ' | sed 's/ $//')
+echo "failed-units=${failed:-none}"

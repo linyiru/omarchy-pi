@@ -1,0 +1,214 @@
+#!/bin/bash
+
+# Runs one round of Raspberry Pi Imager's settings on a real Pi, with no card
+# swap: factory-resets the Pi over SSH, leaves the rpi-preseed.toml a scenario
+# describes on its boot partition, reboots, answers owner setup through a
+# console (screen and keyboard), then logs in and checks what the scenario
+# expects. It tests the image's factory snapshot, not a new build.
+#
+# Usage: test/hardware/preseed-round --wipe <hostname> <scenario>
+#
+# --wipe names the hostname the Pi has now: the reset erases it, so a round
+# refuses to start anywhere else. The scenario is a file under scenarios/ or
+# its name.
+#
+# Nothing about the machines is kept here; the environment names them:
+#
+#   OMARCHY_PI_HOST      the Pi's address
+#   OMARCHY_PI_CONSOLE   a program: `shot <file.png>`, `type <text>`, `key enter`
+#   OMARCHY_PI_SERIAL    a program: `listen <seconds>` streams the Pi's serial
+#                        console to stdout
+#
+# Each round makes a new account: a random password and a new SSH key, kept
+# for the next round's reset in $XDG_STATE_HOME/omarchy-pi/hardware/<host>/.
+# The first round logs in with what the Pi has now:
+#
+#   OMARCHY_PI_USER, OMARCHY_PI_SSH_KEY (a private key file) and
+#   OMARCHY_PI_PASSWORD_FILE (the user's password, for sudo)
+#
+# The serial log and screenshots go to $OMARCHY_PI_CACHE/hardware/<time>/.
+# They hold the Pi's machine-id and addresses: keep them out of the repo.
+
+set -euo pipefail
+
+here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+
+usage() {
+  echo "Usage: $0 --wipe <hostname> <scenario>" >&2
+  exit 2
+}
+
+(( $# == 3 )) && [[ $1 == "--wipe" ]] || usage
+wipe_hostname=$2
+scenario=$3
+[[ -f $scenario ]] || scenario=$here/scenarios/$scenario.sh
+[[ -f $scenario ]] || { echo "No scenario $3" >&2; exit 2; }
+
+: "${OMARCHY_PI_HOST:?names the Pi}" "${OMARCHY_PI_CONSOLE:?names the console program}" "${OMARCHY_PI_SERIAL:?names the serial program}"
+host=$OMARCHY_PI_HOST
+console=$OMARCHY_PI_CONSOLE
+serial=$OMARCHY_PI_SERIAL
+
+state=${XDG_STATE_HOME:-$HOME/.local/state}/omarchy-pi/hardware/$host
+run=${OMARCHY_PI_CACHE:-$HOME/.cache/omarchy-pi}/hardware/$(date -u +%Y%m%dT%H%M%SZ)
+tmp=$(mktemp -d)
+serial_pid=""
+cleanup() {
+  [[ -z $serial_pid ]] || kill "$serial_pid" 2>/dev/null || true
+  rm -rf "$tmp"
+}
+trap cleanup EXIT
+mkdir -p "$run"
+(umask 077 && mkdir -p "$state")
+
+log() {
+  echo "==> [$(date +%T)] $1"
+}
+
+die() {
+  echo "Error: $1" >&2
+  exit 1
+}
+
+# The account the Pi has now.
+if [[ -f $state/user ]]; then
+  user=$(<"$state/user")
+  key=$state/id_ed25519
+  password_file=$state/password
+else
+  : "${OMARCHY_PI_USER:?no saved account for $host: set OMARCHY_PI_USER, OMARCHY_PI_SSH_KEY and OMARCHY_PI_PASSWORD_FILE}"
+  user=$OMARCHY_PI_USER
+  key=${OMARCHY_PI_SSH_KEY:?}
+  password_file=${OMARCHY_PI_PASSWORD_FILE:?}
+fi
+
+# Every reset gives the Pi new host keys, so none are remembered.
+ssh_opts=(-o BatchMode=yes -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10)
+
+pi() {
+  ssh "${ssh_opts[@]}" -i "$key" "$user@$host" "$@"
+}
+
+# Runs a command as root on the Pi; the password goes first on its stdin.
+pi_root() {
+  local command=$1
+  shift
+  { printf '%s\n' "$(head -n 1 "$password_file")"; cat "$@"; } | pi "sudo -S -p '' bash -c $(printf '%q' "$command")"
+}
+
+[[ $(pi hostname) == "$wipe_hostname" ]] || die "$host is not $wipe_hostname; nothing was reset"
+
+# The new account, and the settings Imager would write for it.
+new_user=tester
+new_password=$(head -c 4096 /dev/urandom | tr -dc 'a-zA-Z0-9' | head -c 24 || true)
+ssh-keygen -q -t ed25519 -N "" -C "omarchy-pi-hardware-test" -f "$tmp/id_ed25519"
+password_hash=$(openssl passwd -6 -stdin <<<"$new_password")
+ssh_key=$(<"$tmp/id_ed25519.pub")
+wifi_ssid=omarchy-test-net
+wifi_pmk=$(head -c 32 /dev/urandom | od -An -tx1 | tr -d ' \n')
+owner_name=""
+owner_email=""
+expect=()
+# shellcheck source=/dev/null
+source "$scenario"
+toml >"$tmp/rpi-preseed.toml"
+
+log "Resetting $wipe_hostname to its factory state"
+python3 "$here/factory-reset" "${ssh_opts[@]}" -i "$key" "$user@$host" <"$password_file" >"$run/factory-reset.log" 2>&1 ||
+  die "the factory reset did not stage (see $run/factory-reset.log)"
+grep -q "Reset staged" "$run/factory-reset.log" || die "the factory reset did not stage (see $run/factory-reset.log)"
+
+log "Leaving the scenario's settings on the boot partition"
+pi_root 'cat >/boot/rpi-preseed.toml && sync' "$tmp/rpi-preseed.toml" >/dev/null
+
+"$serial" listen 600 >"$run/serial.log" 2>&1 &
+serial_pid=$!
+sleep 2
+log "Rebooting"
+pi_root 'systemctl reboot' /dev/null >/dev/null 2>&1 || true
+# The connection dropping looks like a failed login, so the reboot counts once
+# the old account stops answering. Until then the saved account is still the
+# one the Pi has.
+for (( tries = 0; tries < 30; tries++ )); do
+  pi true 2>/dev/null || break
+  sleep 2
+done
+(( tries < 30 )) || die "$host did not reboot; the saved account is still its own"
+
+# The old account is gone after this reboot: the new one is what logs in next.
+echo "$new_user" >"$state/user"
+printf '%s' "$new_password" >"$state/password"
+cp "$tmp/id_ed25519" "$tmp/id_ed25519.pub" "$state/"
+chmod 600 "$state/password" "$state/id_ed25519"
+user=$new_user
+key=$state/id_ed25519
+password_file=$state/password
+
+# The serial console without its colours and terminal queries.
+serial_text() {
+  sed -E 's/\x1b\[[0-9;?]*[A-Za-z]//g; s/\x1b\][^\x1b\x07]*(\x07|\x1b\\)//g; s/\x1bP[^\x1b]*\x1b\\//g; s/\r//g' "$run/serial.log"
+}
+
+# Waits until the serial console shows a line matching a pattern.
+wait_serial() {
+  local pattern=$1 seconds=$2
+  for (( i = 0; i < seconds; i++ )); do
+    serial_text | grep -a -q -E "$pattern" && return 0
+    sleep 1
+  done
+  return 1
+}
+
+log "Waiting for the settings to apply"
+wait_serial 'Finished .*Apply the settings Raspberry Pi Imager wrote' 300 || die "the settings were not applied (see $run/serial.log)"
+wait_serial 'login: *$' 120 || die "the boot did not finish (see $run/serial.log)"
+
+# Owner setup asks only for what Imager has no field for. The console types
+# as a US keyboard: keep scenario text to letters, digits, spaces and the
+# characters a layout leaves where US has them.
+log "Answering owner setup"
+sleep 10
+"$console" key enter
+sleep 4
+"$console" shot "$run/1-full-name.png" >/dev/null
+[[ -z $owner_name ]] || "$console" type "$owner_name"
+"$console" key enter
+sleep 3
+[[ -z $owner_email ]] || "$console" type "$owner_email"
+"$console" key enter
+sleep 3
+"$console" shot "$run/2-confirm.png" >/dev/null
+"$console" key enter
+
+log "Waiting for the new account"
+for (( i = 0; i < 180; i += 5 )); do
+  pi true 2>/dev/null && break
+  sleep 5
+done
+pi true || die "cannot log in as $new_user with the new key"
+sleep 30
+"$console" shot "$run/3-desktop.png" >/dev/null
+
+log "Checking"
+probe=$(pi_root "$(<"$here/probe")" /dev/null 2>/dev/null)
+if SSH_ASKPASS=$here/askpass SSH_ASKPASS_REQUIRE=force OMARCHY_PI_ASKPASS_FILE=$password_file \
+  ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10 \
+  -o PreferredAuthentications=password,keyboard-interactive -o PubkeyAuthentication=no \
+  "$user@$host" true </dev/null 2>/dev/null; then
+  probe+=$'\n'"ssh.password-login=accepted"
+else
+  probe+=$'\n'"ssh.password-login=refused"
+fi
+printf '%s\n' "$probe" >"$run/probe.txt"
+
+status=0
+for line in "${expect[@]}"; do
+  if grep -qxF -- "$line" <<<"$probe"; then
+    echo "ok - $line"
+  else
+    echo "not ok - $line (got: $(grep -E "^${line%%=*}=" <<<"$probe" | cut -d= -f2- || true))"
+    status=1
+  fi
+done
+echo "Logs and screenshots: $run"
+exit "$status"

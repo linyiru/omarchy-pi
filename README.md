@@ -74,6 +74,7 @@ What to know:
 - `packages/omarchy-rpi-boot` - a prototype of the boot package `omarchy-lifecycle-dispatch` expects on a Pi; unencrypted roots only
 - `packages/omarchy-rpi-preseed` - applies Raspberry Pi Imager's settings at first boot
 - `test/` - tests that run on the build host
+- `test/hardware/` - a round on a real Pi: factory reset, Imager's settings, owner setup and checks; see [docs/hardware-test.md](docs/hardware-test.md)
 
 ## Emulation workarounds
 

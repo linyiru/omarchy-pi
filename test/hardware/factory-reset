@@ -1,0 +1,62 @@
+#!/usr/bin/python3
+
+# Stages omarchy-system-factory-reset on the Pi over SSH, as an owner at its
+# terminal would: gives sudo the password, types the confirmation and picks
+# "Reboot later", so preseed-round can leave the card's settings before it
+# reboots. Reads the password from stdin; the arguments are ssh's.
+#
+# Usage: test/hardware/factory-reset [ssh options] <user@host> <password
+
+import fcntl
+import os
+import pty
+import re
+import select
+import struct
+import sys
+import termios
+import time
+
+password = sys.stdin.readline().rstrip("\n").encode()
+command = ["ssh", "-tt", *sys.argv[1:], "omarchy-system-factory-reset"]
+
+# Each prompt, and what the owner types at it. gum drops keys that arrive
+# before it has drawn, so each answer waits and types a key at a time.
+steps = [
+    (rb"\[sudo\] password", [password, b"\r"]),
+    (rb"Type 'reset'", list(b"reset\r")),
+    (rb"Reboot to complete the reset\?", [b"\x1b[C", b"\r"]),  # right: "Reboot later"
+]
+
+pid, fd = pty.fork()
+if pid == 0:
+    # gum panics drawing into a terminal with no size.
+    fcntl.ioctl(0, termios.TIOCSWINSZ, struct.pack("HHHH", 40, 120, 0, 0))
+    os.execvp(command[0], command)
+
+screen = b""
+deadline = time.time() + 600
+while time.time() < deadline:
+    ready, _, _ = select.select([fd], [], [], 0.5)
+    if not ready:
+        continue
+    try:
+        chunk = os.read(fd, 4096)
+    except OSError:
+        break
+    if not chunk:
+        break
+    sys.stdout.write(re.sub(r"\x1b\[[0-9;?<>=$]*[A-Za-z]|\x1b\][^\x1b]*\x1b\\", "", chunk.decode(errors="replace")))
+    sys.stdout.flush()
+    screen += chunk
+    text = re.sub(rb"\x1b\[[0-9;?<>=$]*[A-Za-z]|\x08", b"", screen)
+    if steps and re.search(steps[0][0], text):
+        time.sleep(1 if steps[0][1][0] == password else 3)
+        for key in steps[0][1]:
+            os.write(fd, bytes([key]) if isinstance(key, int) else key)
+            time.sleep(0.15)
+        steps.pop(0)
+        screen = b""
+
+_, status = os.waitpid(pid, 0)
+sys.exit(os.waitstatus_to_exitcode(status) if not steps else 1)

@@ -1,0 +1,6 @@
+#!/bin/bash
+
+# The SSH_ASKPASS preseed-round tries a password login with: prints the
+# password in the file OMARCHY_PI_ASKPASS_FILE names.
+
+head -n 1 "$OMARCHY_PI_ASKPASS_FILE"
