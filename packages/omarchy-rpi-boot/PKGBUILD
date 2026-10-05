@@ -1,6 +1,6 @@
 # Prototype of the Raspberry Pi boot package omarchy-lifecycle-dispatch expects
 # (docs/lifecycle-dispatch.md): the firmware boot chain of an unencrypted
-# Omarchy root. Built from this tree, never published.
+# Omarchy root. Published in the [omarchy-pi] repository.
 pkgname=omarchy-rpi-boot
 pkgver=0.3.1
 pkgrel=1

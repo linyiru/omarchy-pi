@@ -1,5 +1,5 @@
 # Applies Raspberry Pi Imager's OS customisation (its rpi-preseed.toml) to an
-# Omarchy image at first boot. Built from this tree, never published.
+# Omarchy image at first boot. Published in the [omarchy-pi] repository.
 pkgname=omarchy-rpi-preseed
 pkgver=0.1.0
 pkgrel=1

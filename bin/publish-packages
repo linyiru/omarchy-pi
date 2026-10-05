@@ -1,0 +1,105 @@
+#!/bin/bash
+
+# Publishes the packages bin/build-packages built (signed) as the [omarchy-pi]
+# repository: the release packages-aarch64 of this repository on GitHub, whose
+# download URL is the Server an image lists. Adds what is new to the signed
+# database and uploads it; a package file already published is never
+# replaced, so its checksum in the database stays true.
+#
+# Usage: bin/publish-packages <package-dir>
+#
+# Needs gh, signed in with write access to the repository, and
+# OMARCHY_PI_SIGNING_KEY, a key in $GNUPGHOME, which the packages were
+# signed with.
+
+set -euo pipefail
+
+if (( $# != 1 )); then
+  echo "Usage: $0 <package-dir>" >&2
+  exit 2
+fi
+
+dir=$(realpath -- "$1")
+repo=${OMARCHY_PI_REPO:-linyiru/omarchy-pi}
+tag=packages-aarch64
+db=omarchy-pi
+work=$(mktemp -d)
+trap 'rm -rf "$work"' EXIT
+
+if [[ -z ${OMARCHY_PI_SIGNING_KEY:-} ]]; then
+  echo "Error: set OMARCHY_PI_SIGNING_KEY to the key the packages are signed with" >&2
+  exit 1
+fi
+
+if ! gh release view "$tag" -R "$repo" >/dev/null 2>&1; then
+  gh release create "$tag" -R "$repo" --latest=false --title "[omarchy-pi] packages (aarch64)" \
+    --notes "The pacman repository an Omarchy Pi image lists before Omarchy's own. Not an image release."
+fi
+
+mapfile -t published < <(gh release view "$tag" -R "$repo" --json assets --jq '.assets[].name')
+is_published() {
+  local name=$1 asset
+  for asset in "${published[@]}"; do
+    [[ $asset == "$name" ]] && return 0
+  done
+  return 1
+}
+
+# repo-add keeps the database as $db.db.tar.gz behind a $db.db link; pacman
+# fetches $db.db, so that name is uploaded as a file.
+if is_published "$db.db"; then
+  gh release download "$tag" -R "$repo" -D "$work" -p "$db.db" -p "$db.files"
+  mv "$work/$db.db" "$work/$db.db.tar.gz"
+  mv "$work/$db.files" "$work/$db.files.tar.gz"
+fi
+
+listed=()
+if [[ -f $work/$db.db.tar.gz ]]; then
+  mapfile -t listed < <(bsdtar -xOf "$work/$db.db.tar.gz" | awk 'previous == "%FILENAME%" { print } { previous = $0 }')
+fi
+is_listed() {
+  local name=$1 file
+  for file in "${listed[@]}"; do
+    [[ $file == "$name" ]] && return 0
+  done
+  return 1
+}
+
+# A package uploaded by a run that stopped before the database is added from
+# the published file, not this build of it.
+new=()
+upload=()
+for package in "$dir"/*.pkg.tar.zst; do
+  name=$(basename -- "$package")
+  if is_listed "$name"; then
+    echo "Already published: $name"
+  elif is_published "$name"; then
+    gh release download "$tag" -R "$repo" -D "$work" -p "$name" -p "$name.sig"
+    new+=("$work/$name")
+  elif [[ ! -f $package.sig ]]; then
+    echo "Error: $name is not signed" >&2
+    exit 1
+  else
+    new+=("$package")
+    upload+=("$package")
+  fi
+done
+
+if (( ${#new[@]} == 0 )); then
+  echo "Nothing new to publish"
+  exit 0
+fi
+
+repo-add --sign --key "$OMARCHY_PI_SIGNING_KEY" --verify "$work/$db.db.tar.gz" "${new[@]}"
+for file in db files; do
+  cp --remove-destination "$work/$db.$file.tar.gz" "$work/$db.$file"
+  cp --remove-destination "$work/$db.$file.tar.gz.sig" "$work/$db.$file.sig"
+done
+
+# The packages first, so the database never names a file not yet there.
+for package in "${upload[@]}"; do
+  gh release upload "$tag" -R "$repo" "$package" "$package.sig"
+done
+gh release upload "$tag" -R "$repo" --clobber "$work/$db.db" "$work/$db.db.sig" "$work/$db.files" "$work/$db.files.sig"
+
+printf 'Published: %s\n' "${new[@]##*/}"
