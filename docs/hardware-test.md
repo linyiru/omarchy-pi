@@ -2,7 +2,7 @@
 
 `test/hardware/preseed-round` checks what a card Raspberry Pi Imager wrote does on a real Raspberry Pi, without writing a card each time. The Pi is factory-reset back to the image's factory snapshot, which asks for its owner again, so a round is: reset, leave the settings a scenario describes as `/boot/rpi-preseed.toml`, reboot, answer owner setup, log in and check. One round takes about two minutes and needs no one at the Pi.
 
-What it covers is the first boot of the image the card already holds: `omarchy-rpi-preseed`, owner setup and the desktop session it starts. A new build still needs a card written with it, and Imager writing the file is not part of a round: the scenarios write what Imager 2.0 writes (the same format `test/omarchy-rpi-preseed-test.sh` uses).
+What a `--wipe` round covers is the first boot of the image the card already holds: `omarchy-rpi-preseed`, owner setup and the desktop session it starts. A new build needs a `--card` round, which writes the image to a card in a reader next to the Pi, with the scenario's settings, as Imager would; someone then moves the card to the Pi and powers it on, and the round carries on from the boot. Imager writing the file is not part of either: the scenarios write what Imager 2.0 writes (the same format `test/omarchy-rpi-preseed-test.sh` uses).
 
 ## What it needs
 
@@ -18,6 +18,15 @@ OMARCHY_PI_HOST=<address> OMARCHY_PI_CONSOLE=<program> OMARCHY_PI_SERIAL=<progra
 ```
 
 `--wipe` takes the hostname the Pi has now. The reset erases the Pi, so a round checks the name before it starts and stops if it doesn't match.
+
+For a new build, with the card in a reader:
+
+```bash
+OMARCHY_PI_HOST=<address> OMARCHY_PI_CONSOLE=<program> OMARCHY_PI_SERIAL=<program> \
+  test/hardware/preseed-round --card /dev/sdX omarchy-pi.img key-only-de
+```
+
+It erases the whole card, so it refuses a device that is neither removable nor USB, and unmounts the card's partitions first if a desktop automounted them. It writes only the image's allocated blocks (`dd conv=sparse`): what it skips is free space to the image's file systems. Once it says so, move the card to the Pi and power it on; it waits 25 minutes for the boot.
 
 ## Accounts and secrets
 
