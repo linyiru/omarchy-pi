@@ -26,6 +26,8 @@
 #   OMARCHY_PI_SERIAL    a program: `listen <seconds>` streams the Pi's serial
 #                        console to stdout
 #
+# It reads the console's screenshots with ImageMagick's `magick`.
+#
 # Each round makes a new account: a random password and a new SSH key, kept
 # for the next round's reset in $XDG_STATE_HOME/omarchy-pi/hardware/<host>/.
 # The first round logs in with what the Pi has now:
@@ -229,9 +231,21 @@ wait_serial 'login: *$' 120 "$applied" || die "the boot did not finish (see $run
 # characters a layout leaves where US has them.
 log "Answering owner setup"
 sleep 10
-"$console" key enter
-sleep 4
-"$console" shot "$run/1-full-name.png" >/dev/null
+# The splash can miss a Return (seen 2026-10-05), and typing on past it would
+# answer every step one early. Its logo sits mid-screen, a form's at the top:
+# the screen's top fifth is bright only once a form is up.
+form_up() {
+  "$console" shot "$1" >/dev/null &&
+    (( $(magick "$1" -crop 100%x20%+0+0 +repage -format '%[fx:mean > 0.2]' info:) ))
+}
+for (( presses = 0; presses < 5; presses++ )); do
+  "$console" key enter
+  for (( waited = 0; waited < 12; waited += 2 )); do
+    sleep 2
+    form_up "$run/1-full-name.png" && break 2
+  done
+done
+(( presses < 5 )) || die "owner setup did not start (see $run/1-full-name.png)"
 [[ -z $owner_name ]] || "$console" type "$owner_name"
 "$console" key enter
 sleep 3
