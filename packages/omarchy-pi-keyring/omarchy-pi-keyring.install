@@ -1,0 +1,10 @@
+post_upgrade() {
+  # An image has no keyring until its first boot, which populates them all.
+  if usr/bin/pacman-key -l >/dev/null 2>&1; then
+    usr/bin/pacman-key --populate omarchy-pi
+  fi
+}
+
+post_install() {
+  post_upgrade
+}

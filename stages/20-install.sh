@@ -36,6 +36,9 @@ chmod 0644 /var/lib/omarchy/image/target
 # omarchy-dev brings snapper only on x86_64, but install/config/snapper.sh
 # runs everywhere, and factory reset rests on the same btrfs layout.
 timed bootstrap "${pacman_build[@]}" -S --needed base-devel git omarchy-keyring snapper
+# The [omarchy-pi] repository's key, which the first boot's keyring trusts
+# with every other installed one.
+timed pi-keyring "${pacman_build[@]}" -U --needed /root/pkgs/omarchy-pi-keyring-*.pkg.tar.zst
 timed settings "${pacman_build[@]}" -U --needed /root/pkgs/omarchy-settings-dev-*.pkg.tar.zst
 timed luarocks "${pacman_build[@]}" -S --needed lua51 luarocks
 timed nvim "${pacman_build[@]}" -S --needed omarchy-nvim

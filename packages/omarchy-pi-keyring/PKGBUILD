@@ -1,0 +1,15 @@
+# The key the [omarchy-pi] repository's packages and database are signed
+# with. A first boot's `pacman-key --populate` trusts every keyring installed,
+# so an image needs nothing more than this package.
+pkgname=omarchy-pi-keyring
+pkgver=20261004
+pkgrel=1
+pkgdesc="Omarchy Pi package signing key"
+arch=('any')
+url="https://github.com/linyiru/omarchy-pi"
+license=('MIT')
+install=$pkgname.install
+
+package() {
+  install -Dm0644 -t "$pkgdir/usr/share/pacman/keyrings/" "$startdir"/omarchy-pi{.gpg,-trusted,-revoked}
+}
