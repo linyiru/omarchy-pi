@@ -202,19 +202,27 @@ serial_text() {
   sed -E 's/\x1b\[[0-9;?]*[A-Za-z]//g; s/\x1b\][^\x1b\x07]*(\x07|\x1b\\)//g; s/\x1bP[^\x1b]*\x1b\\//g; s/\r//g' "$run/serial.log"
 }
 
-# Waits until the serial console shows a line matching a pattern.
+# Waits until the serial console shows a line matching a pattern, after the
+# first line matching another when one is given.
 wait_serial() {
-  local pattern=$1 seconds=$2
+  local pattern=$1 seconds=$2 after=${3:-}
   for (( i = 0; i < seconds; i++ )); do
-    serial_text | grep -a -q -E "$pattern" && return 0
+    if [[ -n $after ]]; then
+      serial_text | sed -n -E "/$after/,\$p" | grep -a -q -E "$pattern" && return 0
+    else
+      serial_text | grep -a -q -E "$pattern" && return 0
+    fi
     sleep 1
   done
   return 1
 }
 
+applied='Finished .*Apply the settings Raspberry Pi Imager wrote'
 log "Waiting for the settings to apply"
-wait_serial 'Finished .*Apply the settings Raspberry Pi Imager wrote' "$boot_wait" || die "the settings were not applied (see $run/serial.log)"
-wait_serial 'login: *$' 120 || die "the boot did not finish (see $run/serial.log)"
+wait_serial "$applied" "$boot_wait" || die "the settings were not applied (see $run/serial.log)"
+# A Pi left running while its card was out still has a login prompt from
+# before on the console: only one the new boot prints counts.
+wait_serial 'login: *$' 120 "$applied" || die "the boot did not finish (see $run/serial.log)"
 
 # Owner setup asks only for what Imager has no field for. The console types
 # as a US keyboard: keep scenario text to letters, digits, spaces and the
