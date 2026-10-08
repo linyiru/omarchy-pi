@@ -8,6 +8,10 @@ Status: a prototype. The image builds under emulation on an x86_64 host and boot
 
 <img src="docs/pi5-desktop.png" width="1280" alt="Omarchy on a Raspberry Pi 5: fastfetch in a terminal over the Omarchy desktop">
 
+<img src="docs/pi4-desktop-2x.png" width="1280" alt="Omarchy on a Raspberry Pi 4: fastfetch in a floating terminal over the Omarchy desktop, captured at 2x">
+
+<img src="docs/pi4-desktop.png" width="1280" alt="Omarchy on a Raspberry Pi 4: fastfetch in a terminal filling the Omarchy desktop at 2560x1440">
+
 ## Build
 
 On Arch Linux, with `sudo`, `qemu-user-static` and `qemu-user-static-binfmt` (x86_64 hosts only), `systemd-nspawn`, `btrfs-progs`, `dosfstools`, `rsync`, `libarchive` and `base-devel`:
