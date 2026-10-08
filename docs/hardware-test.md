@@ -8,7 +8,7 @@ What a `--wipe` round covers is the first boot of the image the card already hol
 
 - A Pi running the image, reachable by SSH, and a machine next to it with:
 - a console, a program taking `shot <file.png>`, `type <text>` and `key enter`, that sees the Pi's screen and types on its keyboard (an IP KVM, for one);
-- the Pi's serial console, a program taking `listen <seconds>` and streaming it to stdout (a USB serial adapter on the Pi 5's debug header).
+- the Pi's serial console, a program taking `listen <seconds>` and streaming it to stdout (a USB serial adapter on the Pi 5's debug header, or on a Pi 4's GPIO 14 and 15, pins 8 and 10).
 
 The environment names all three; nothing about the machines is in this repo:
 
@@ -27,6 +27,14 @@ OMARCHY_PI_HOST=<address> OMARCHY_PI_CONSOLE=<program> OMARCHY_PI_SERIAL=<progra
 ```
 
 It erases the whole card, so it refuses a device that is neither removable nor USB, and unmounts the card's partitions first if a desktop automounted them. It writes only the image's allocated blocks (`dd conv=sparse`): what it skips is free space to the image's file systems. Once it says so, move the card to the Pi and power it on; it waits 25 minutes for the boot.
+
+On a Pi 4 the serial console is the mini UART, which is off unless the card's `config.txt` turns it on, and whose baud rate follows the GPU's core clock: once the clock moves, 115200 comes out garbled. A card for the hardware test gets both lines in its `[pi4]` section; the image leaves them out, since pinning the core clock keeps it from scaling down:
+
+```ini
+[pi4]
+enable_uart=1
+core_freq_min=500
+```
 
 ## Accounts and secrets
 
