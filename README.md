@@ -4,7 +4,7 @@
 
 Builds an Omarchy disk image for the Raspberry Pi from Arch Linux ARM's rpi-aarch64 root, using the Raspberry Pi platform support on the [`raspberry-pi-platform`](https://github.com/linyiru/omarchy/pull/1) branch of Omarchy.
 
-Status: a prototype. The image builds under emulation on an x86_64 host and boots on a Raspberry Pi 5 (16 GB) through first-boot setup to the Omarchy desktop, with all 16 GB and the Pi's V3D GPU.
+Status: a prototype. The image builds under emulation on an x86_64 host and boots on a Raspberry Pi 5 (16 GB) and a Raspberry Pi 4 (8 GB) through first-boot setup to the Omarchy desktop, with all the Pi's memory and its V3D GPU. The same image runs on both.
 
 <img src="docs/pi5-desktop.png" width="1280" alt="Omarchy on a Raspberry Pi 5: fastfetch in a terminal over the Omarchy desktop">
 
@@ -18,9 +18,9 @@ bin/build-image ~/Projects/omarchy ~/Projects/omarchy-pkgs omarchy-pi.img
 
 The first argument is an Omarchy checkout with Raspberry Pi support, the second an [omarchy-pkgs](https://github.com/omacom/omarchy-pkgs) checkout for the `omarchy-dev` and `omarchy-settings-dev` PKGBUILDs. Downloads go to `~/.cache/omarchy-pi` (`OMARCHY_PI_CACHE`). Write the result to an SD card or USB drive with `dd` or Raspberry Pi Imager's custom image option.
 
-## Run it on a Raspberry Pi 5
+## Run it on a Raspberry Pi 5 or 4
 
-Tested on a Raspberry Pi 5 (16 GB) from a microSD card, with HDMI and wired Ethernet.
+Tested on a Raspberry Pi 5 (16 GB) and a Raspberry Pi 4 Model B (8 GB), each from a microSD card, with HDMI and wired Ethernet. On the Pi 4, the first boot through owner setup to the desktop, with the settings Imager writes, is verified by the hardware test on 2026-10-07; kernel upgrades are verified on the Pi 5 only.
 
 1. Write the image to the card. Check the device name with `lsblk` first; this overwrites it:
 
@@ -28,7 +28,7 @@ Tested on a Raspberry Pi 5 (16 GB) from a microSD card, with HDMI and wired Ethe
    sudo dd if=omarchy-pi.img of=/dev/sdX bs=4M conv=fsync status=progress
    ```
 
-   Or with Raspberry Pi Imager, which can set the account, hostname, timezone, Wi-Fi and SSH on the card: pack the image with `bin/release-image omarchy-pi.img release/` and open the manifest it writes (`rpi-imager --repo release/omarchy-pi.rpi-imager-manifest`; on Linux Imager needs root to write, so run it with `sudo`). Choose Raspberry Pi 5, then Omarchy Pi (64-bit) and the card, fill in the customisation, and write.
+   Or with Raspberry Pi Imager, which can set the account, hostname, timezone, Wi-Fi and SSH on the card: pack the image with `bin/release-image omarchy-pi.img release/` and open the manifest it writes (`rpi-imager --repo release/omarchy-pi.rpi-imager-manifest`; on Linux Imager needs root to write, so run it with `sudo`). Choose Raspberry Pi 5 or Raspberry Pi 4, then Omarchy Pi (64-bit) and the card, fill in the customisation, and write.
 
 2. Boot the Pi from the card with a screen and a keyboard attached. The first boot sets up the hardware, rebuilds the initramfs and asks for the owner (keyboard layout, user name, password, hostname, timezone) on tty1, then logs that user in to the Omarchy desktop. The desktop renders on the Pi's V3D GPU.
 
